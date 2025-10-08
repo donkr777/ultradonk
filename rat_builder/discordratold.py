@@ -32,7 +32,7 @@ async def on_ready():
     pc_username = os.getlogin()
     
     # Get the category by ID
-    category_id = 1425289389084246067
+    category_id = ""
     category = discord.utils.get(bot.get_all_channels(), id=category_id)
     
     if not category:
@@ -667,4 +667,4 @@ Welcome! Use the `!` prefix for all commands. Some commands may require extra pe
         await ctx.send(part)
 
 # Run the bot
-bot.run('MTQwODg4MDEzNzAwMDQ1NjIyMg.GEHo87.7PyPOirLxwY_H64DqzV8U4_uCPQCbrMWxByhG8')
+bot.run('')

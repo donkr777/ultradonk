@@ -69,7 +69,7 @@ async def on_ready():
     print(f"Logged in as {bot.user.name}")
 
     pc_username = os.getlogin()
-    category_id = 1425289389084246067 #builder replace this:
+    category_id = "" #builder replace this:
 
     category = bot.get_channel(category_id)
     if not category:
@@ -604,4 +604,4 @@ async def uac(ctx):
     pass
 
 # Run the bot --> in the builder replace this
-bot.run('MTQwODg4MDEzNzAwMDQ1NjIyMg.GEHo87.7PyPOirLxwY_H64DqzV8U4_uCPQCbrMWxByhG8')
+bot.run('')
