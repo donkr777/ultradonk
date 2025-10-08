@@ -1,0 +1,137 @@
+body {
+    background-color: #1a1a1a; /* Deep black background */
+    color: #f5f5f5; /* Light off-white for text */
+    font-family: 'Playfair Display', serif; /* Elegant, luxurious font */
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.form-container {
+    max-width: 600px; /* Increased slightly for side-by-side buttons */
+    width: 100%;
+    padding: 40px;
+    background: linear-gradient(145deg, #2c2c2c, #1a1a1a); /* Subtle black gradient */
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    text-align: center;
+    margin: 20px;
+}
+
+h1 {
+    font-size: 2.5em;
+    color: #D4A017; /* Luxurious gold */
+    margin-bottom: 20px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+h2 {
+    font-size: 1.5em;
+    color: #f5f5f5;
+    margin-bottom: 15px;
+    font-weight: 400;
+}
+
+label {
+    font-size: 1.1em;
+    color: #f5f5f5;
+    display: block;
+    margin-bottom: 10px;
+}
+
+input[type="text"] {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 20px;
+    border: none;
+    border-radius: 8px;
+    background-color: #333333;
+    color: #f5f5f5;
+    font-size: 1em;
+    font-family: 'Roboto', sans-serif; /* Clean, modern font for inputs */
+    transition: border 0.3s ease;
+}
+
+input[type="text"]:focus {
+    outline: none;
+    border: 2px solid #D4A017;
+    background-color: #3c3c3c;
+}
+
+.button-container {
+    display: flex;
+    justify-content: center;
+    gap: 20px; /* Increased spacing between buttons */
+    margin-top: 15px;
+}
+
+button {
+    padding: 12px 24px;
+    background: linear-gradient(90deg, #D4A017, #FFD700); /* Luxurious gold gradient */
+    color: #1a1a1a;
+    border: none;
+    border-radius: 8px;
+    font-size: 1.1em;
+    font-family: 'Playfair Display', serif;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    flex: 1; /* Buttons share space evenly */
+    max-width: 200px; /* Limit button width for balance */
+}
+
+button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(212, 160, 23, 0.5);
+}
+
+.key-display {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #2c2c2c;
+    border-radius: 8px;
+    border: 1px solid #D4A017;
+}
+
+.key-display p {
+    margin: 0;
+    font-size: 1.2em;
+    color: #f5f5f5;
+}
+
+.key-display span#key-text {
+    color: #D4A017;
+    font-weight: bold;
+}
+
+.error {
+    color: #ff4d4d; /* Red for errors */
+    font-size: 1.2em;
+    margin-top: 15px;
+}
+
+@media (max-width: 600px) {
+    .form-container {
+        padding: 20px;
+        margin: 10px;
+    }
+
+    h1 {
+        font-size: 2em;
+    }
+
+    .button-container {
+        flex-direction: column; /* Stack buttons on small screens */
+        gap: 10px;
+    }
+
+    button {
+        width: 100%;
+        max-width: none; /* Full width on mobile */
+    }
+}

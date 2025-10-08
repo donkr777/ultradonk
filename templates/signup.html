@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<head>
+    <title>Signup</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Roboto:wght@400&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="form-container">
+        <h1>Sign Up</h1>
+        <h2>Enter Invite Code to Generate Key</h2>
+        <form method="POST" action="/sign_up">
+            <input type="text" id="check_invite" name="invitecode" placeholder="Enter invite code" required>
+            <div class="button-container">
+                <button type="submit" name="action" value="gen_key">Generate Key</button>
+                <form method="POST" action="/sign_up">
+                    <button type="submit" name="action" value="ret_login">Login</button>
+                </form>
+            </div>
+        </form>
+        {% if key %}
+            <div class="key-display">
+                <p>Please save this key: <span id="key-text">{{ key }}</span></p>
+                <button onclick="copyKey()">Copy Key</button>
+            </div>
+            <script>
+                function copyKey() {
+                    const keyText = document.getElementById('key-text').innerText;
+                    navigator.clipboard.writeText(keyText)
+                        .then(() => alert('Key copied to clipboard!'))
+                        .catch(err => alert('Failed to copy key: ' + err));
+                }
+            </script>
+        {% endif %}
+        {% if error %}
+            <div class="error">An error has occurred: {{ error }}</div>
+        {% endif %}
+    </div>
+</body>

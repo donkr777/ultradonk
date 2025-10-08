@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<head>
+    <title>UltraDonk</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Roboto:wght@400&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="form-container">
+        <h1>Login</h1>
+        <h2>Please enter your key</h2>
+        <form method="POST" action="/login_get">
+            <input type="text" id="key_post" name="key" placeholder="Enter key here">
+            <div class="button-container">
+                <button type="submit" name="action" value="key_check">Login</button>
+                <form method="POST" action="/login_get">
+                    <button type="submit" name="action" value="take_signup">Sign Up</button>
+                </form>
+            </div>
+            {% if error %}
+                <div class="error">An error has occurred: {{ error }}</div>
+            {% endif %}
+        </form>
+    </div>
+</body>
