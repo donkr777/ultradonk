@@ -1,7 +1,8 @@
 from flask import *
 import random
 import string
-
+import subprocess
+import threading
 app = Flask(__name__)
 
 invite_code="superdonk"
@@ -70,6 +71,23 @@ def signup():
 
 @app.route("/dashboard",methods=['GET','POST'])
 def dashboard():
-    return render_template("dashboard.html")
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "startbuilder":
+            noti = "Thank you for using UltraDonk - Builder started in background!"
+            def run_builder():
+                subprocess.run(["python", "builder.py"], creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            # Create and start the thread
+            builder_thread = threading.Thread(target=run_builder)
+            builder_thread.daemon = True
+            builder_thread.start()
+            
+            return render_template("dashboard.html", noti=noti)
+        elif action=="see_clients":
+            return render_template("clients.html") #add clients.html page  
+    elif request.method=="GET":
+        return render_template("dashboard.html")
+
 if __name__ == '__main__':
     app.run(debug=True)

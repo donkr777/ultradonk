@@ -1,0 +1,4 @@
+Flask
+PyQt6
+discord.py
+pyinstaller
