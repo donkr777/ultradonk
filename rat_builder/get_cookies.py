@@ -9,7 +9,7 @@ import zipfile
 from shutil import copy2
 from getpass import getuser
 import psutil
-from Cryptodome.Cipher import AES
+from Crypto.Cipher import AES
 from win32crypt import CryptUnprotectData
 import discord
 

