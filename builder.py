@@ -31,7 +31,7 @@ class RatBuilderGUI(QMainWindow):
         layout.setContentsMargins(20, 20, 20, 20)
         
         # Title
-        title = QLabel('UltraDonk Rat Builder')
+        title = QLabel('UltraDonk Builder')
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setFont(QFont('Playfair Display', 18, QFont.Weight.Bold))
         title.setStyleSheet('color: #D4A017; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 2px;')
