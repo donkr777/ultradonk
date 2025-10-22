@@ -10,7 +10,7 @@ import ctypes
 import atexit
 import threading
 from concurrent.futures import ThreadPoolExecutor
-
+import base64
 
 # List of non-standard packages to install
 NON_STANDARD_PACKAGES = [
@@ -79,10 +79,13 @@ def install_packages():
 
 
 def is_already_running():
-    """Check if another instance is already running and kill duplicates"""
+    """Check if another instance is already running using a mutex approach"""
     try:
+        import psutil
+        
         current_process_path = os.path.abspath(sys.argv[0])
         current_process_name = os.path.basename(current_process_path).lower()
+        current_pid = os.getpid()
         
         print(f"🔍 Singleton check - Current PID: {os.getpid()}, Process: {current_process_name}")
         
@@ -90,77 +93,111 @@ def is_already_running():
         if not current_process_name.endswith('.exe'):
             print("ℹ️ Running as Python script, singleton check skipped")
             return False
-            
-        import psutil
-            
-        current_pid = os.getpid()
-        current_create_time = psutil.Process(current_pid).create_time()
-        killed_pids = []
         
-        # First pass: identify duplicates
+        # Get current process creation time
+        current_proc = psutil.Process(current_pid)
+        current_create_time = current_proc.create_time()
+        
+        # Find all processes with the same name
         duplicates = []
-        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline', 'create_time']):
+        for proc in psutil.process_iter(['pid', 'name', 'exe', 'create_time', 'cmdline']):
             try:
-                if proc.info['pid'] == current_pid:
+                proc_info = proc.info
+                if proc_info['pid'] == current_pid:
                     continue
-                    
-                proc_exe = proc.info.get('exe', '').lower() 
-                proc_name = proc.info.get('name', '').lower()
-                proc_cmdline = proc.info.get('cmdline', [])
                 
-                is_same_process = (
-                    proc_exe == current_process_path.lower() or
-                    proc_name == current_process_name or
-                    (proc_exe and os.path.basename(proc_exe) == current_process_name) or
-                    (proc_cmdline and any(current_process_path.lower() in cmd.lower() for cmd in proc_cmdline if cmd))
-                )
+                # Check if this is the same executable
+                proc_exe = proc_info.get('exe', '').lower()
+                proc_name = proc_info.get('name', '').lower()
+                
+                is_same_process = False
+                
+                # Method 1: Compare executable paths
+                if proc_exe and os.path.exists(proc_exe):
+                    if os.path.samefile(proc_exe, current_process_path):
+                        is_same_process = True
+                
+                # Method 2: Compare process names as fallback
+                if not is_same_process and proc_name == current_process_name:
+                    is_same_process = True
+                
+                # Method 3: Check command line as last resort
+                if not is_same_process and proc_info.get('cmdline'):
+                    cmdline = ' '.join(proc_info['cmdline']).lower()
+                    if current_process_path.lower() in cmdline:
+                        is_same_process = True
                 
                 if is_same_process:
-                    # Check which process is older
-                    proc_create_time = proc.info.get('create_time', 0)
+                    proc_create_time = proc_info.get('create_time', 0)
+                    print(f"📋 Found duplicate: PID {proc_info['pid']} (created: {proc_create_time}) vs current: {current_create_time}")
+                    
                     if proc_create_time < current_create_time:
-                        # The other process is older, THIS instance should exit
-                        print(f"⚠️ Found older instance (PID {proc.info['pid']}), this instance will exit")
+                        # Other process is older, we should exit
+                        print(f"⚠️ Found older instance (PID {proc_info['pid']}), this instance will exit")
                         return True
                     else:
-                        # This process is older, kill the duplicate
+                        # We are older, mark the other for termination
                         duplicates.append(proc)
-                    
-            except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError):
+                        
+            except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError, FileNotFoundError):
                 continue
         
-        # If no duplicates found, continue
-        if not duplicates:
-            print("✅ No duplicate instances found")
-            return False
+        # Kill newer duplicates
+        if duplicates:
+            killed_pids = []
+            for proc in duplicates:
+                try:
+                    print(f"🔄 Killing duplicate process: PID {proc.info['pid']}")
+                    proc.terminate()  # Use terminate instead of kill for cleaner shutdown
+                    killed_pids.append(proc.info['pid'])
+                except Exception as kill_error:
+                    print(f"❌ Failed to kill process {proc.info['pid']}: {kill_error}")
             
-        print(f"🚫 Found {len(duplicates)} duplicate processes")
+            if killed_pids:
+                print(f"🎯 Terminated {len(killed_pids)} duplicate instances: PIDs {killed_pids}")
+                # Wait for processes to terminate
+                time.sleep(3)
+                
+                # Double check they're gone
+                for pid in killed_pids[:]:
+                    try:
+                        if psutil.pid_exists(pid):
+                            print(f"⚠️ Process {pid} still alive, forcing kill")
+                            psutil.Process(pid).kill()
+                            time.sleep(1)
+                    except:
+                        pass
         
-        # Second pass: kill duplicates with delays
-        for proc in duplicates:
-            try:
-                print(f"🔄 Killing duplicate process: PID {proc.info['pid']}")
-                proc.kill()
-                killed_pids.append(proc.info['pid'])
-                # Wait for process to fully terminate
-                time.sleep(1)
-            except Exception as kill_error:
-                print(f"❌ Failed to kill process {proc.info['pid']}: {kill_error}")
-        
-        if killed_pids:
-            print(f"🎯 Killed {len(killed_pids)} duplicate instances: PIDs {killed_pids}")
-            # Extra wait to ensure system stability
-            time.sleep(2)
-            
-        # Return False since we are the surviving instance
+        print("✅ No duplicate instances found or duplicates terminated")
         return False
         
     except Exception as e:
         print(f"❌ Singleton check error: {e}")
+        import traceback
+        traceback.print_exc()
         # On error, assume we should continue (safer than crashing)
         return False
 
-
+def create_global_mutex():
+    """Create a global mutex to prevent multiple instances"""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+            
+            # Create a mutex name based on the executable path
+            mutex_name = "Global\\" + os.path.abspath(sys.argv[0]).replace("\\", "_").replace(":", "").replace(" ", "_")
+            
+            # Try to create the mutex
+            mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
+            
+            if mutex and ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+                print("🛑 Another instance is already running (mutex detected)")
+                return False
+            return True
+    except Exception as e:
+        print(f"⚠️ Mutex creation failed: {e}")
+    return True
 # Run package installation at startup
 install_packages()
 
@@ -177,10 +214,35 @@ import pygame
 from pygame.locals import *
 
 # CRITICAL: Check for duplicate instances BEFORE starting the bot
+print("🚀 Starting application...")
+
+# Use mutex approach on Windows
+if sys.platform == "win32" and not create_global_mutex():
+    print("🛑 Exiting: Another instance detected via mutex")
+    sys.exit(0)
+
+# Use process-based detection as fallback
 if is_already_running():
     print("🛑 Exiting: Another instance is already running")
     sys.exit(0)
 
+print("✅ Instance check passed, starting bot...")
+
+ENCODED_TOKEN = "YOUR_BASE64_ENCODED_TOKEN_HERE"  # This gets replaced by builder
+
+def decode_token(encoded_token):
+    """Decode Base64 encoded bot token"""
+    try:
+        # Add padding if needed
+        padding = 4 - len(encoded_token) % 4
+        if padding != 4:
+            encoded_token += '=' * padding
+        
+        decoded_bytes = base64.b64decode(encoded_token)
+        return decoded_bytes.decode('utf-8')
+    except Exception as e:
+        print(f"❌ Token decoding failed: {e}")
+        return None
 
 # Set up Discord bot with intents
 intents = discord.Intents.default()
@@ -195,6 +257,11 @@ user_channels = {}
 async def on_ready():
     print(f"Logged in as {bot.user.name}")
 
+    # Mark as main instance - ADD THIS LINE
+    bot.is_main_instance = True
+
+    # Set start time FIRST
+    bot.start_time = time.time()
     # Set start time FIRST
     bot.start_time = time.time()
 
@@ -681,6 +748,10 @@ async def check_startup():
     Only re-adds if missing and only for EXE files.
     """
     try:
+        # Only run if we're the main instance - ADD THIS CHECK
+        if not hasattr(bot, 'is_main_instance') or not bot.is_main_instance:
+            return
+            
         file_path = os.path.abspath(sys.argv[0])
         file_name = os.path.basename(file_path)
         file_ext = os.path.splitext(file_name)[1].lower()
@@ -886,7 +957,13 @@ async def startup(ctx):
 
     except Exception as e:
         await ctx.send(f"❌ An unexpected error occurred: {e}")
+
 # Commands are added by the builder above this line
 
-# Run the bot --> in the builder replace this
-bot.run('bot token here-->replace')
+# ==== FINAL BOT EXECUTION ====
+decoded_token = decode_token(ENCODED_TOKEN)
+if decoded_token:
+    print("✅ Token decoded successfully, starting bot...")
+    bot.run(decoded_token)
+else:
+    print("❌ Failed to decode bot token - exiting")
