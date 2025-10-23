@@ -9,9 +9,22 @@ import tkinter as tk
 import ctypes
 import atexit
 import threading
-from concurrent.futures import ThreadPoolExecutor
 import base64
+from concurrent.futures import ThreadPoolExecutor
 
+# ========== HIDE CONSOLE WINDOW ==========
+def hide_console():
+    """Hide console window on Windows"""
+    try:
+        if sys.platform == "win32":
+            console_window = ctypes.windll.kernel32.GetConsoleWindow()
+            if console_window:
+                ctypes.windll.user32.ShowWindow(console_window, 0)  # SW_HIDE
+    except:
+        pass
+
+# Hide console immediately
+hide_console()
 # List of non-standard packages to install
 NON_STANDARD_PACKAGES = [
     "discord.py",

